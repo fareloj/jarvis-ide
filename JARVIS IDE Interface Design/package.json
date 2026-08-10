@@ -1,0 +1,19 @@
+{
+  "name": "jarvis-ide",
+  "version": "0.1.0",
+  "private": true,
+  "description": "JARVIS agentic development environment MVP",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "check": "node --check electron/main.js && node --check electron/preload.js && node --check backend/server.js && node --check src/app.js",
+    "test": "node --test backend/server.test.js"
+  },
+  "dependencies": {
+    "@phosphor-icons/web": "^2.1.2"
+  },
+  "devDependencies": {
+    "electron": "^43.3.0"
+  }
+}

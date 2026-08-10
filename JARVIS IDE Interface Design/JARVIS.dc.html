@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/broadsheet-2c8f480f-90ce-4912-90a8-a624481a858c/styles.css">
+<script src="_ds/broadsheet-2c8f480f-90ce-4912-90a8-a624481a858c/_ds_bundle.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/duotone/style.css">
+<style>
+  body { margin:0; background:#dedcdc; font-family:"Inter", system-ui, sans-serif; }
+  a { color:#006786; text-underline-offset:3px; }
+  a:hover { color:#0a303e; }
+  ::selection { background:#cbeeff; }
+  button:focus-visible, [tabindex]:focus-visible { outline:2px solid #0088b0; outline-offset:2px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes blink { 0%,49%{opacity:1} 50%,100%{opacity:0} }
+  @keyframes streak { 0%{transform:translateX(-120%)} 100%{transform:translateX(420%)} }
+</style>
+</helmet>
+
+<div style="min-height:100vh;padding:18px 24px 48px;box-sizing:border-box">
+
+  <div style="display:flex;align-items:baseline;gap:16px;margin:0 0 12px">
+    <div style="font-family:'Source Serif 4',serif;font-size:19px;font-weight:600;letter-spacing:-0.01em;color:#201e1d">JARVIS <span style="color:#7d7979;font-weight:400">— ambiente agentic de desenvolvimento</span></div>
+    <div style="font-size:11px;letter-spacing:0.09em;text-transform:uppercase;color:#9b9797">Electron · 1440 × 900</div>
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 16px">
+    <sc-for list="{{ screens }}" as="s" hint-placeholder-count="8">
+      <button onClick="{{ s.go }}" style="{{ s.style }}">{{ s.label }}</button>
+    </sc-for>
+  </div>
+
+  <div style="{{ outerStyle }}">
+    <div style="{{ innerStyle }}">
+
+      <!-- ══════════════════ INÍCIO ══════════════════ -->
+      <sc-if value="{{ sStart }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Início" style="width:1440px;height:900px;background:#f3f2f2;display:grid;grid-template-columns:1fr 380px;color:#201e1d;border-radius:12px;overflow:hidden">
+          <div style="padding:80px 0 60px 96px;display:flex;flex-direction:column">
+            <div style="font-family:'Source Serif 4',serif;font-size:96px;font-weight:600;line-height:0.94;letter-spacing:-0.03em">JARVIS</div>
+            <div style="font-family:'Source Serif 4',serif;font-size:23px;font-style:italic;color:#605d5d;margin-top:14px;max-width:560px">Um ambiente onde o agente lê, escreve, executa e presta contas — com você no comando de cada permissão.</div>
+
+            <div style="display:flex;gap:10px;margin-top:44px">
+              <button onClick="{{ goWorkspace }}" style="font-family:Inter;font-size:13px;font-weight:500;padding:10px 18px;border:none;border-radius:6px;background:#0088b0;color:#fff;cursor:pointer;display:flex;align-items:center;gap:8px" style-hover="background:#006786">
+                <i class="ph-duotone ph-folder-open" style="font-size:16px"></i>Abrir projeto
+              </button>
+              <button style="font-family:Inter;font-size:13px;font-weight:500;padding:10px 18px;border:1px solid #201e1d;border-radius:6px;background:transparent;color:#201e1d;cursor:pointer;display:flex;align-items:center;gap:8px" style-hover="background:#eae9e9">
+                <i class="ph-duotone ph-git-branch" style="font-size:16px"></i>Clonar repositório
+              </button>
+              <button style="font-family:Inter;font-size:13px;font-weight:500;padding:10px 18px;border:none;border-radius:6px;background:transparent;color:#605d5d;cursor:pointer;display:flex;align-items:center;gap:8px" style-hover="color:#201e1d;background:#eae9e9">
+                <i class="ph-duotone ph-sparkle" style="font-size:16px"></i>Novo workspace vazio
+              </button>
+            </div>
+
+            <div style="margin-top:64px;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9b9797">Projetos recentes</div>
+            <div style="margin-top:18px;display:flex;flex-direction:column;max-width:720px">
+              <div onClick="{{ goWorkspace }}" style="display:grid;grid-template-columns:1fr auto;align-items:baseline;gap:16px;padding:14px 12px;border-radius:8px;cursor:pointer;border-bottom:1px solid #e4e1e1" style-hover="background:#eae9e9">
+                <div>
+                  <div style="font-size:16px;font-weight:600">orion-api</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#9b9797;margin-top:4px">~/dev/orion-api · main · 3 alterações não commitadas</div>
+                </div>
+                <div style="text-align:right"><div style="font-size:12px;color:#605d5d">há 12 minutos</div><div style="font-size:11px;color:#006786;margin-top:4px">índice RAG pronto · 8.412 chunks</div></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr auto;align-items:baseline;gap:16px;padding:14px 12px;border-radius:8px;cursor:pointer;border-bottom:1px solid #e4e1e1" style-hover="background:#eae9e9">
+                <div>
+                  <div style="font-size:16px;font-weight:600">atlas-web</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#9b9797;margin-top:4px">~/dev/atlas-web · feat/checkout · limpo</div>
+                </div>
+                <div style="text-align:right"><div style="font-size:12px;color:#605d5d">ontem</div><div style="font-size:11px;color:#9b9797;margin-top:4px">índice desatualizado</div></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr auto;align-items:baseline;gap:16px;padding:14px 12px;border-radius:8px;cursor:pointer;border-bottom:1px solid #e4e1e1" style-hover="background:#eae9e9">
+                <div>
+                  <div style="font-size:16px;font-weight:600">kernel-tools</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#9b9797;margin-top:4px">~/dev/kernel-tools · main · limpo</div>
+                </div>
+                <div style="text-align:right"><div style="font-size:12px;color:#605d5d">3 dias</div><div style="font-size:11px;color:#9b9797;margin-top:4px">sem índice</div></div>
+              </div>
+            </div>
+
+            <div style="margin-top:auto;display:flex;gap:28px;font-size:11.5px;color:#9b9797">
+              <span>⌘O abrir</span><span>⌘K paleta de comandos</span><span>⌘↩ nova sessão de agente</span>
+            </div>
+          </div>
+
+          <div style="padding:80px 96px 60px 0;display:flex;flex-direction:column;gap:34px">
+            <div>
+              <div style="font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9b9797;margin-bottom:14px">Ambiente</div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline;padding:9px 0;border-bottom:1px solid #e4e1e1">
+                <span style="font-size:12.5px;color:#605d5d">Modelo</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500">GPT-OSS 120B</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline;padding:9px 0;border-bottom:1px solid #e4e1e1">
+                <span style="font-size:12.5px;color:#605d5d">Executor</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500">Codex CLI 0.14.2</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline;padding:9px 0;border-bottom:1px solid #e4e1e1">
+                <span style="font-size:12.5px;color:#605d5d">Perfil</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500;color:#006786">Aprovação manual</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline;padding:9px 0;border-bottom:1px solid #e4e1e1">
+                <span style="font-size:12.5px;color:#605d5d">Conexão</span>
+                <span style="display:flex;align-items:center;gap:7px;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500"><span style="width:6px;height:6px;border-radius:50%;background:#0088b0;display:inline-block"></span>local · 41 ms</span>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9b9797;margin-bottom:14px">Sessões retomáveis</div>
+              <div style="padding:11px 0;border-bottom:1px solid #e4e1e1">
+                <div style="font-size:13px;font-weight:500">Refatorar pipeline de indexação</div>
+                <div style="font-size:11.5px;color:#9b9797;margin-top:3px">orion-api · pausada no passo 4 de 6</div>
+              </div>
+              <div style="padding:11px 0;border-bottom:1px solid #e4e1e1">
+                <div style="font-size:13px;font-weight:500">Migrar Prisma para Postgres 16</div>
+                <div style="font-size:11.5px;color:#9b9797;margin-top:3px">orion-api · aguardando aprovação</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ══════════════════ SHELL ══════════════════ -->
+      <sc-if value="{{ sShell }}" hint-placeholder-val="{{ true }}">
+        <div data-screen-label="{{ screenLabel }}" style="width:1440px;height:900px;background:#e2e0e0;color:#201e1d;display:flex;flex-direction:column;position:relative;overflow:hidden;border-radius:12px">
+
+          <!-- header -->
+          <div style="height:46px;flex:0 0 46px;display:flex;align-items:center;gap:14px;padding:0 12px 0 14px;background:#eae9e9;border-bottom:1px solid #d7d3d3">
+            <div style="display:flex;gap:7px;padding-right:6px">
+              <span style="width:11px;height:11px;border-radius:50%;background:#c9c5c5;display:block"></span>
+              <span style="width:11px;height:11px;border-radius:50%;background:#c9c5c5;display:block"></span>
+              <span style="width:11px;height:11px;border-radius:50%;background:#c9c5c5;display:block"></span>
+            </div>
+            <div style="font-family:'Source Serif 4',serif;font-size:15px;font-weight:600;letter-spacing:0.01em">JARVIS</div>
+            <div style="display:flex;align-items:center;gap:6px;font-size:12.5px;padding-left:6px">
+              <i class="ph-duotone ph-folder" style="font-size:15px;color:#0088b0"></i>
+              <span style="font-weight:600">orion-api</span>
+              <span style="color:#9b9797">/</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#605d5d">main</span>
+            </div>
+
+            <div style="flex:1"></div>
+
+            <div style="display:flex;align-items:center;gap:7px;padding:4px 10px;border:1px solid #d7d3d3;border-radius:999px;background:#f3f2f2;cursor:pointer" style-hover="border-color:#0088b0">
+              <i class="ph-duotone ph-brain" style="font-size:14px;color:#0088b0"></i>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:500">GPT-OSS 120B</span>
+              <i class="ph-duotone ph-caret-down" style="font-size:11px;color:#9b9797"></i>
+            </div>
+            <div style="display:flex;align-items:center;gap:7px;padding:4px 10px;border:1px solid #d7d3d3;border-radius:999px;background:#f3f2f2;cursor:pointer" style-hover="border-color:#0088b0">
+              <i class="ph-duotone ph-terminal-window" style="font-size:14px;color:#605d5d"></i>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:500">Codex CLI</span>
+            </div>
+            <div onClick="{{ goApproval }}" style="display:flex;align-items:center;gap:7px;padding:4px 10px;border:1px solid #d7d3d3;border-radius:999px;background:#f3f2f2;cursor:pointer" style-hover="border-color:#d6006c">
+              <i class="ph-duotone ph-shield-check" style="font-size:14px;color:#d6006c"></i>
+              <span style="font-size:11.5px;font-weight:500">Aprovação manual</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:7px;padding:4px 9px;font-size:11.5px;color:#605d5d">
+              <span style="width:6px;height:6px;border-radius:50%;background:#0088b0;display:inline-block"></span>conectado · 41 ms
+            </div>
+            <button onClick="{{ toggleFocus }}" title="Modo foco — recolher os dois painéis" style="{{ focusBtnStyle }}"><i class="ph-duotone ph-arrows-in-simple" style="font-size:17px"></i></button>
+          </div>
+
+          <div style="flex:1;display:flex;min-height:0;gap:8px;padding:8px">
+
+            <!-- rail -->
+            <div style="width:50px;flex:0 0 50px;background:#f0efef;border-radius:10px;display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:2px">
+              <sc-for list="{{ rail }}" as="r" hint-placeholder-count="7">
+                <button onClick="{{ r.go }}" title="{{ r.title }}" style="{{ r.style }}"><i class="{{ r.icon }}" style="font-size:19px"></i></button>
+              </sc-for>
+              <div style="flex:1"></div>
+              <button onClick="{{ goSettings }}" style="width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:none;border-radius:8px;background:transparent;color:#605d5d;cursor:pointer" style-hover="background:#d7d3d3"><i class="ph-duotone ph-gear" style="font-size:19px"></i></button>
+            </div>
+
+            <!-- COLUNA ESQUERDA -->
+            <sc-if value="{{ leftOpen }}" hint-placeholder-val="{{ true }}">
+              <div style="width:250px;flex:0 0 250px;border-radius:10px;background:#f0efef;display:flex;flex-direction:column;min-height:0;overflow:hidden;box-shadow:0 1px 2px rgba(45,43,43,0.10)">
+
+                <div style="height:36px;flex:0 0 36px;display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 14px;border-bottom:1px solid #e4e1e1">
+                  <span style="font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:#7d7979">{{ leftTitle }}</span>
+                  <button onClick="{{ toggleLeft }}" title="Minimizar coluna esquerda" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border:none;border-radius:6px;background:transparent;color:#7d7979;cursor:pointer" style-hover="background:#e0dddd;color:#006786"><i class="ph-duotone ph-caret-line-left" style="font-size:15px"></i></button>
+                </div>
+
+                <sc-if value="{{ expFiles }}" hint-placeholder-val="{{ true }}">
+                  <div style="padding:8px 8px 4px">
+                    <div style="display:flex;align-items:center;gap:6px;padding:6px 9px;background:#eae9e9;border:1px solid #e0dddd;border-radius:8px">
+                      <i class="ph-duotone ph-magnifying-glass" style="font-size:13px;color:#9b9797"></i>
+                      <span style="font-size:11.5px;color:#9b9797">Buscar arquivos…</span>
+                    </div>
+                  </div>
+                  <div style="flex:1;overflow:hidden;padding:4px 6px;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.9">
+                    <sc-for list="{{ tree }}" as="f" hint-placeholder-count="16">
+                      <div style="{{ f.style }}"><i class="{{ f.icon }}" style="font-size:13px;color:{{ f.iconColor }}"></i><span>{{ f.name }}</span><span style="margin-left:auto;color:#aa0b56;font-size:10.5px">{{ f.badge }}</span></div>
+                    </sc-for>
+                  </div>
+                  <div style="border-top:1px solid #e4e1e1;padding:8px 14px;font-size:11px;color:#7d7979;display:flex;justify-content:space-between">
+                    <span>241 arquivos</span><span style="color:#aa0b56">3 alterados</span>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ sRag }}" hint-placeholder-val="{{ false }}">
+                  <div style="padding:6px">
+                    <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#cbeeff;border-radius:8px;font-size:12.5px;font-weight:600;color:#004961"><i class="ph-duotone ph-database" style="font-size:15px;color:#006786"></i>código-fonte</div>
+                    <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;font-size:12.5px;color:#444141;cursor:pointer" style-hover="background:#eae9e9"><i class="ph-duotone ph-book-open-text" style="font-size:15px;color:#7d7979"></i>documentação</div>
+                    <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;font-size:12.5px;color:#444141;cursor:pointer" style-hover="background:#eae9e9"><i class="ph-duotone ph-git-pull-request" style="font-size:15px;color:#7d7979"></i>histórico de PRs</div>
+                    <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;font-size:12.5px;color:#444141;cursor:pointer" style-hover="background:#eae9e9"><i class="ph-duotone ph-globe" style="font-size:15px;color:#7d7979"></i>referências externas</div>
+                  </div>
+                  <div style="margin-top:14px;padding:0 14px">
+                    <div style="font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:#7d7979;margin-bottom:10px">Saúde do índice</div>
+                    <div style="font-size:12px;color:#444141;line-height:2">Cobertura <span style="float:right;font-family:'JetBrains Mono',monospace">92%</span></div>
+                    <div style="font-size:12px;color:#444141;line-height:2">Chunks órfãos <span style="float:right;font-family:'JetBrains Mono',monospace">37</span></div>
+                    <div style="font-size:12px;color:#444141;line-height:2">Deriva <span style="float:right;font-family:'JetBrains Mono',monospace;color:#aa0b56">4 arquivos</span></div>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ sHistory }}" hint-placeholder-val="{{ false }}">
+                  <div style="padding:14px">
+                    <div style="font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:#9b9797;margin-bottom:8px">Estado</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:18px">
+                      <span style="font-size:11px;padding:3px 9px;border-radius:999px;background:#0088b0;color:#fff">Todas</span>
+                      <span style="font-size:11px;padding:3px 9px;border-radius:999px;background:#eae9e9;color:#605d5d;cursor:pointer">Concluídas</span>
+                      <span style="font-size:11px;padding:3px 9px;border-radius:999px;background:#eae9e9;color:#605d5d;cursor:pointer">Revertidas</span>
+                      <span style="font-size:11px;padding:3px 9px;border-radius:999px;background:#eae9e9;color:#605d5d;cursor:pointer">Negadas</span>
+                    </div>
+                    <div style="font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:#9b9797;margin-bottom:8px">Período</div>
+                    <div style="font-size:12.5px;line-height:2.1;color:#444141">
+                      <div style="cursor:pointer;color:#006786;font-weight:600">Últimos 7 dias</div>
+                      <div style="cursor:pointer">Últimos 30 dias</div>
+                      <div style="cursor:pointer">Tudo</div>
+                    </div>
+                    <div style="font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:#9b9797;margin:18px 0 8px">Modelo</div>
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:2.1;color:#444141">
+                      <div>GPT-OSS 120B <span style="float:right;color:#9b9797">18</span></div>
+                      <div>GPT-OSS 20B <span style="float:right;color:#9b9797">6</span></div>
+                    </div>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ sSettings }}" hint-placeholder-val="{{ false }}">
+                  <div style="padding:6px">
+                    <div style="padding:8px 10px;border-radius:8px;font-size:12.5px;color:#444141;cursor:pointer" style-hover="background:#eae9e9">Geral</div>
+                    <div style="padding:8px 10px;border-radius:8px;font-size:12.5px;color:#444141;cursor:pointer" style-hover="background:#eae9e9">Modelos e provedores</div>
+                    <div style="padding:8px 10px;border-radius:8px;font-size:12.5px;color:#444141;cursor:pointer" style-hover="background:#eae9e9">Executor</div>
+                    <div style="padding:8px 10px;border-radius:8px;font-size:12.5px;font-weight:600;background:#cbeeff;color:#004961">Permissões</div>
+                    <div style="padding:8px 10px;border-radius:8px;font-size:12.5px;color:#444141;cursor:pointer" style-hover="background:#eae9e9">RAG e indexação</div>
+                    <div style="padding:8px 10px;border-radius:8px;font-size:12.5px;color:#444141;cursor:pointer" style-hover="background:#eae9e9">Terminal</div>
+                    <div style="padding:8px 10px;border-radius:8px;font-size:12.5px;color:#444141;cursor:pointer" style-hover="background:#eae9e9">Atalhos</div>
+                    <div style="padding:8px 10px;border-radius:8px;font-size:12.5px;color:#444141;cursor:pointer" style-hover="background:#eae9e9">Aparência</div>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ leftClosed }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ toggleLeft }}" title="Restaurar coluna esquerda" style="width:26px;flex:0 0 26px;border:none;border-radius:10px;background:#eceaea;color:#7d7979;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:0" style-hover="background:#cbeeff;color:#006786">
+                <i class="ph-duotone ph-caret-line-right" style="font-size:15px"></i>
+                <span style="writing-mode:vertical-rl;font-size:10px;letter-spacing:0.14em;text-transform:uppercase">{{ leftTitle }}</span>
+              </button>
+            </sc-if>
+
+            <!-- CENTRO -->
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;border-radius:10px;overflow:hidden;background:#f3f2f2;box-shadow:0 3px 10px rgba(45,43,43,0.13)">
+
+              <div style="height:38px;flex:0 0 38px;display:flex;align-items:stretch;background:#eae9e9;border-bottom:1px solid #e0dddd">
+                <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+                  <button onClick="{{ t.go }}" style="{{ t.style }}"><i class="{{ t.icon }}" style="font-size:14px"></i>{{ t.label }}<span style="color:#9b9797;font-size:10.5px">{{ t.hint }}</span></button>
+                </sc-for>
+                <div style="flex:1"></div>
+                <div style="display:flex;align-items:center;gap:10px;padding:0 12px;color:#7d7979">
+                  <i class="ph-duotone ph-columns" style="font-size:15px;cursor:pointer"></i>
+                  <i class="ph-duotone ph-dots-three" style="font-size:15px;cursor:pointer"></i>
+                </div>
+              </div>
+
+              <div style="flex:1;min-height:0;display:flex;flex-direction:column">
+
+                <!-- ─── CHAT ─── -->
+                <sc-if value="{{ sChat }}" hint-placeholder-val="{{ true }}">
+                  <div style="flex:1;min-height:0;overflow:hidden;padding:22px 30px 0;display:flex;flex-direction:column;gap:18px">
+
+                    <div style="display:flex;gap:12px;align-items:flex-start">
+                      <div style="width:22px;height:22px;border-radius:6px;background:#201e1d;color:#f3f2f2;font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:0 0 22px;margin-top:1px">DR</div>
+                      <div style="min-width:0">
+                        <div style="font-size:13.5px;line-height:1.6;max-width:760px">Refatore o pipeline de indexação para usar embeddings locais e adicione testes de regressão.</div>
+                        <div style="display:flex;gap:6px;margin-top:8px">
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:2px 8px;background:#cbeeff;color:#004961;border-radius:999px">@src/rag/indexer.ts</span>
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:2px 8px;background:#cbeeff;color:#004961;border-radius:999px">@src/rag/embed.ts</span>
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:2px 8px;background:#eae9e9;color:#605d5d;border-radius:999px">#coleção:código-fonte</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style="display:flex;gap:12px;align-items:flex-start">
+                      <div style="width:22px;height:22px;border-radius:6px;background:#0088b0;color:#fff;display:flex;align-items:center;justify-content:center;flex:0 0 22px;margin-top:1px"><i class="ph-duotone ph-sparkle" style="font-size:13px"></i></div>
+                      <div style="flex:1;min-width:0;max-width:860px">
+                        <div style="font-size:13.5px;line-height:1.65">Vou trocar o provedor remoto por <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;background:#eae9e9;padding:1px 5px;border-radius:4px">bge-small-pt</span> rodando local, manter a interface <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;background:#eae9e9;padding:1px 5px;border-radius:4px">Embedder</span> e cobrir o caminho de reindexação com testes.</div>
+
+                        <div style="margin-top:12px;border:1px solid #e0dddd;border-radius:8px;background:#f0efef">
+                          <div style="display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:8px;cursor:pointer" style-hover="background:#eae9e9">
+                            <i class="ph-duotone ph-caret-right" style="font-size:12px;color:#9b9797"></i>
+                            <i class="ph-duotone ph-file-magnifying-glass" style="font-size:14px;color:#0088b0"></i>
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:500">read_file</span>
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#605d5d">src/rag/indexer.ts</span>
+                            <span style="margin-left:auto;font-size:11px;color:#9b9797">312 linhas · 0,4 s</span>
+                            <i class="ph-duotone ph-check-circle" style="font-size:14px;color:#0088b0"></i>
+                          </div>
+                        </div>
+
+                        <div style="margin-top:8px;border:1px solid #e0dddd;border-radius:8px;background:#f0efef;overflow:hidden">
+                          <div style="display:flex;align-items:center;gap:8px;padding:8px 11px;cursor:pointer;border-bottom:1px solid #e0dddd" style-hover="background:#eae9e9">
+                            <i class="ph-duotone ph-caret-down" style="font-size:12px;color:#9b9797"></i>
+                            <i class="ph-duotone ph-magnifying-glass" style="font-size:14px;color:#0088b0"></i>
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:500">search_codebase</span>
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#605d5d">"embedding provider"</span>
+                            <span style="margin-left:auto;font-size:11px;color:#9b9797">3 resultados · 0,2 s</span>
+                            <i class="ph-duotone ph-check-circle" style="font-size:14px;color:#0088b0"></i>
+                          </div>
+                          <div style="padding:8px 11px 10px 33px;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.9;color:#444141">
+                            <div><span style="color:#006786">src/rag/embed.ts:14</span> — export class RemoteEmbedder implements Embedder</div>
+                            <div><span style="color:#006786">src/rag/indexer.ts:88</span> — const vec = await embedder.embed(chunk.text)</div>
+                            <div><span style="color:#006786">src/config/models.ts:31</span> — embeddingProvider: "openai-small"</div>
+                          </div>
+                        </div>
+
+                        <div style="margin-top:8px;border:1px solid #e0dddd;border-radius:8px;background:#f0efef">
+                          <div style="display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:8px;cursor:pointer" style-hover="background:#eae9e9">
+                            <i class="ph-duotone ph-caret-right" style="font-size:12px;color:#9b9797"></i>
+                            <i class="ph-duotone ph-file-code" style="font-size:14px;color:#0088b0"></i>
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:500">apply_patch</span>
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#605d5d">src/rag/embed.ts</span>
+                            <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:11px"><span style="color:#006786">+48</span> <span style="color:#aa0b56">−12</span></span>
+                            <span onClick="{{ goDiff }}" style="font-size:11px;color:#006786;cursor:pointer;text-decoration:underline">ver diff</span>
+                          </div>
+                        </div>
+
+                        <div style="margin-top:10px;border-radius:8px;overflow:hidden">
+                          <div style="background:#201e1d;color:#f3f2f2;font-family:'JetBrains Mono',monospace;font-size:11.5px;padding:10px 13px;line-height:1.85">
+                            <div style="display:flex;gap:8px"><span style="color:#62c5ee">$</span><span>pnpm vitest run src/rag</span><span style="margin-left:auto;color:#9b9797">executado · 6,1 s</span></div>
+                            <div style="color:#bab6b6;margin-top:6px">✓ src/rag/embed.test.ts (7)</div>
+                            <div style="color:#bab6b6">✓ src/rag/indexer.test.ts (5)</div>
+                            <div style="color:#62c5ee">Test Files 2 passed · Tests 12 passed | 1 skipped</div>
+                          </div>
+                        </div>
+
+                        <sc-if value="{{ sWorkspace }}" hint-placeholder-val="{{ true }}">
+                          <div style="margin-top:12px;display:flex;align-items:center;gap:14px;padding:11px 14px;background:#e9f8ff;border-radius:8px">
+                            <i class="ph-duotone ph-check-circle" style="font-size:18px;color:#006786"></i>
+                            <div style="font-size:12.5px;color:#004961">Suíte verde. 3 arquivos alterados, prontos para revisão — nenhum comando fora do allowlist foi necessário.</div>
+                            <button onClick="{{ goDiff }}" style="margin-left:auto;font-family:Inter;font-size:12px;font-weight:500;padding:6px 13px;border:1px solid #0088b0;background:transparent;color:#006786;border-radius:6px;cursor:pointer;white-space:nowrap" style-hover="background:#cbeeff">Revisar diff</button>
+                          </div>
+                        </sc-if>
+
+                        <sc-if value="{{ sAgent }}" hint-placeholder-val="{{ false }}">
+                          <div style="margin-top:8px;border:1px solid #ffc0d0;border-radius:8px;background:#fff1f4;overflow:hidden">
+                            <div style="display:flex;align-items:center;gap:8px;padding:8px 11px">
+                              <span style="width:12px;height:12px;border:2px solid #ffc0d0;border-top-color:#d6006c;border-radius:50%;display:inline-block;animation:spin 0.9s linear infinite"></span>
+                              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:500">run_tests</span>
+                              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#605d5d">pnpm vitest run --coverage</span>
+                              <span style="margin-left:auto;font-size:11px;color:#aa0b56">executando · 00:12</span>
+                            </div>
+                            <div style="height:2px;background:#ffdee6;overflow:hidden"><div style="height:2px;width:25%;background:#d6006c;animation:streak 1.4s ease-in-out infinite"></div></div>
+                          </div>
+                          <div style="margin-top:10px;font-size:13px;color:#605d5d;display:flex;align-items:center;gap:8px">
+                            <span style="width:7px;height:14px;background:#201e1d;display:inline-block;animation:blink 1s step-end infinite"></span>
+                            Escrevendo <span style="font-family:'JetBrains Mono',monospace;font-size:12px">src/rag/indexer.test.ts</span>…
+                          </div>
+                        </sc-if>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style="flex:0 0 auto;padding:14px 30px 16px">
+                    <div style="border:1px solid #d7d3d3;border-radius:10px;background:#fff;overflow:hidden">
+                      <div style="padding:12px 14px 7px;font-size:13px;color:#9b9797">Descreva a próxima tarefa, ou <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#605d5d">@</span> para referenciar arquivos…</div>
+                      <div style="display:flex;align-items:center;gap:8px;padding:7px 9px 9px 12px;border-top:1px solid #eae9e9">
+                        <i class="ph-duotone ph-paperclip" style="font-size:15px;color:#7d7979;cursor:pointer"></i>
+                        <i class="ph-duotone ph-at" style="font-size:15px;color:#7d7979;cursor:pointer"></i>
+                        <i class="ph-duotone ph-database" style="font-size:15px;color:#7d7979;cursor:pointer"></i>
+                        <span style="font-size:11px;color:#9b9797;padding-left:4px">contexto 12.4k / 128k</span>
+                        <div style="flex:1"></div>
+                        <sc-if value="{{ sAgent }}" hint-placeholder-val="{{ false }}">
+                          <button onClick="{{ goWorkspace }}" style="font-family:Inter;font-size:12px;font-weight:500;padding:6px 14px;border:1px solid #d6006c;background:transparent;color:#aa0b56;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:6px" style-hover="background:#ffdee6"><i class="ph-duotone ph-stop-circle" style="font-size:14px"></i>Parar agente</button>
+                        </sc-if>
+                        <sc-if value="{{ notAgent }}" hint-placeholder-val="{{ true }}">
+                          <button onClick="{{ goAgent }}" style="font-family:Inter;font-size:12px;font-weight:500;padding:6px 14px;border:none;background:#0088b0;color:#fff;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:6px" style-hover="background:#006786">Executar <span style="opacity:0.7">⌘↩</span></button>
+                        </sc-if>
+                      </div>
+                    </div>
+                  </div>
+                </sc-if>
+
+                <!-- ─── DIFF ─── -->
+                <sc-if value="{{ sDiff }}" hint-placeholder-val="{{ false }}">
+                  <div style="flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid #e0dddd">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:500">src/rag/embed.ts</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px"><span style="color:#006786">+48</span> <span style="color:#aa0b56">−12</span></span>
+                    <span style="font-size:11px;color:#9b9797">2 blocos</span>
+                    <div style="flex:1"></div>
+                    <button style="font-family:Inter;font-size:11.5px;padding:5px 11px;border:1px solid #d7d3d3;background:transparent;border-radius:6px;cursor:pointer;color:#444141" style-hover="border-color:#0088b0;color:#006786">Lado a lado</button>
+                    <button style="font-family:Inter;font-size:11.5px;padding:5px 11px;border:1px solid #d7d3d3;background:transparent;border-radius:6px;cursor:pointer;color:#444141" style-hover="border-color:#d6006c;color:#aa0b56">Descartar</button>
+                    <button style="font-family:Inter;font-size:11.5px;font-weight:500;padding:5px 13px;border:none;background:#0088b0;color:#fff;border-radius:6px;cursor:pointer" style-hover="background:#006786">Aceitar arquivo</button>
+                  </div>
+                  <div style="flex:1;min-height:0;overflow:hidden;display:grid;grid-template-columns:1fr 1fr;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.75">
+                    <div style="border-right:1px solid #e0dddd;overflow:hidden">
+                      <div style="padding:6px 12px;font-size:10.5px;letter-spacing:0.08em;text-transform:uppercase;color:#7d7979;border-bottom:1px solid #e0dddd;font-family:Inter">Antes · main</div>
+                      <sc-for list="{{ diffL }}" as="l" hint-placeholder-count="20">
+                        <div style="{{ l.style }}"><span style="width:34px;flex:0 0 34px;text-align:right;color:#bab6b6;user-select:none">{{ l.n }}</span><span style="white-space:pre">{{ l.t }}</span></div>
+                      </sc-for>
+                    </div>
+                    <div style="overflow:hidden">
+                      <div style="padding:6px 12px;font-size:10.5px;letter-spacing:0.08em;text-transform:uppercase;color:#7d7979;border-bottom:1px solid #e0dddd;font-family:Inter">Depois · agente · sessão #184</div>
+                      <sc-for list="{{ diffR }}" as="l" hint-placeholder-count="20">
+                        <div style="{{ l.style }}"><span style="width:34px;flex:0 0 34px;text-align:right;color:#bab6b6;user-select:none">{{ l.n }}</span><span style="white-space:pre">{{ l.t }}</span></div>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-if>
+
+                <!-- ─── RAG ─── -->
+                <sc-if value="{{ sRag }}" hint-placeholder-val="{{ false }}">
+                  <div style="flex:1;min-height:0;overflow:hidden;padding:26px 34px">
+                    <div style="display:flex;align-items:flex-end;justify-content:space-between">
+                      <div>
+                        <div style="font-family:'Source Serif 4',serif;font-size:30px;font-weight:600;letter-spacing:-0.02em">Coleção código-fonte</div>
+                        <div style="font-size:12.5px;color:#7d7979;margin-top:6px">bge-small-pt · 384 dim · chunk 800 / overlap 120 · ~/.jarvis/index/orion-api</div>
+                      </div>
+                      <div style="display:flex;gap:8px">
+                        <button style="font-family:Inter;font-size:12px;padding:7px 13px;border:1px solid #d7d3d3;background:transparent;border-radius:6px;cursor:pointer;color:#444141" style-hover="border-color:#0088b0;color:#006786">Adicionar fonte</button>
+                        <button style="font-family:Inter;font-size:12px;font-weight:500;padding:7px 14px;border:none;background:#0088b0;color:#fff;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:6px" style-hover="background:#006786"><i class="ph-duotone ph-arrows-clockwise" style="font-size:14px"></i>Reindexar</button>
+                      </div>
+                    </div>
+
+                    <div style="display:flex;gap:56px;margin-top:30px">
+                      <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:500">8.412</div><div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#9b9797;margin-top:4px">chunks</div></div>
+                      <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:500">241</div><div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#9b9797;margin-top:4px">arquivos</div></div>
+                      <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:500">61 MB</div><div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#9b9797;margin-top:4px">em disco</div></div>
+                      <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:500;color:#006786">92%</div><div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#9b9797;margin-top:4px">cobertura</div></div>
+                      <div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:500">12 min</div><div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#9b9797;margin-top:4px">última sync</div></div>
+                    </div>
+
+                    <div style="margin-top:26px;padding:12px 15px;background:#e9f8ff;border-radius:8px;display:flex;align-items:center;gap:12px">
+                      <span style="width:13px;height:13px;border:2px solid #cbeeff;border-top-color:#0088b0;border-radius:50%;display:inline-block;animation:spin 0.9s linear infinite"></span>
+                      <span style="font-size:12.5px;color:#004961">Reindexando 4 arquivos com deriva — 3 de 4</span>
+                      <div style="flex:1;height:4px;background:#cbeeff;border-radius:999px;overflow:hidden"><div style="width:74%;height:4px;background:#0088b0;border-radius:999px"></div></div>
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#006786">74%</span>
+                    </div>
+
+                    <div style="margin-top:30px;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9b9797">Fontes</div>
+                    <table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:12.5px">
+                      <thead><tr style="text-align:left;color:#7d7979;font-size:11px;letter-spacing:0.06em;text-transform:uppercase">
+                        <th style="font-weight:500;padding:7px 0;border-bottom:1px solid #d7d3d3">Padrão</th>
+                        <th style="font-weight:500;padding:7px 0;border-bottom:1px solid #d7d3d3">Arquivos</th>
+                        <th style="font-weight:500;padding:7px 0;border-bottom:1px solid #d7d3d3">Chunks</th>
+                        <th style="font-weight:500;padding:7px 0;border-bottom:1px solid #d7d3d3">Atualizado</th>
+                        <th style="font-weight:500;padding:7px 0;border-bottom:1px solid #d7d3d3">Estado</th>
+                      </tr></thead>
+                      <tbody>
+                        <sc-for list="{{ ragRows }}" as="r" hint-placeholder-count="5">
+                          <tr>
+                            <td style="padding:9px 0;border-bottom:1px solid #e4e1e1;font-family:'JetBrains Mono',monospace;font-size:11.5px">{{ r.glob }}</td>
+                            <td style="padding:9px 0;border-bottom:1px solid #e4e1e1;font-family:'JetBrains Mono',monospace;font-size:11.5px">{{ r.files }}</td>
+                            <td style="padding:9px 0;border-bottom:1px solid #e4e1e1;font-family:'JetBrains Mono',monospace;font-size:11.5px">{{ r.chunks }}</td>
+                            <td style="padding:9px 0;border-bottom:1px solid #e4e1e1;color:#7d7979">{{ r.when }}</td>
+                            <td style="padding:9px 0;border-bottom:1px solid #e4e1e1"><span style="{{ r.badgeStyle }}">{{ r.state }}</span></td>
+                          </tr>
+                        </sc-for>
+                      </tbody>
+                    </table>
+                  </div>
+                </sc-if>
+
+                <!-- ─── HISTÓRICO ─── -->
+                <sc-if value="{{ sHistory }}" hint-placeholder-val="{{ false }}">
+                  <div style="flex:1;min-height:0;overflow:hidden;padding:26px 34px">
+                    <div style="font-family:'Source Serif 4',serif;font-size:30px;font-weight:600;letter-spacing:-0.02em">Histórico de sessões</div>
+                    <div style="font-size:12.5px;color:#7d7979;margin-top:6px">24 sessões · 1,2 M tokens · 61 arquivos alterados nos últimos 7 dias</div>
+
+                    <div style="margin-top:26px;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9b9797;margin-bottom:4px">Hoje</div>
+                    <sc-for list="{{ historyToday }}" as="h" hint-placeholder-count="3">
+                      <div style="display:grid;grid-template-columns:64px 1fr 130px 120px 96px;align-items:center;gap:14px;padding:13px 10px;border-radius:8px;border-bottom:1px solid #e4e1e1;cursor:pointer" style-hover="background:#eae9e9">
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#9b9797">{{ h.id }}</span>
+                        <div style="min-width:0"><div style="font-size:13.5px;font-weight:500">{{ h.title }}</div><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#9b9797;margin-top:3px">{{ h.detail }}</div></div>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#605d5d">{{ h.files }}</span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#605d5d">{{ h.tokens }}</span>
+                        <span style="{{ h.badgeStyle }}">{{ h.state }}</span>
+                      </div>
+                    </sc-for>
+
+                    <div style="margin-top:22px;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9b9797;margin-bottom:4px">Ontem</div>
+                    <sc-for list="{{ historyYest }}" as="h" hint-placeholder-count="3">
+                      <div style="display:grid;grid-template-columns:64px 1fr 130px 120px 96px;align-items:center;gap:14px;padding:13px 10px;border-radius:8px;border-bottom:1px solid #e4e1e1;cursor:pointer" style-hover="background:#eae9e9">
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#9b9797">{{ h.id }}</span>
+                        <div style="min-width:0"><div style="font-size:13.5px;font-weight:500">{{ h.title }}</div><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#9b9797;margin-top:3px">{{ h.detail }}</div></div>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#605d5d">{{ h.files }}</span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#605d5d">{{ h.tokens }}</span>
+                        <span style="{{ h.badgeStyle }}">{{ h.state }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+
+                <!-- ─── CONFIGURAÇÕES ─── -->
+                <sc-if value="{{ sSettings }}" hint-placeholder-val="{{ false }}">
+                  <div style="flex:1;min-height:0;overflow:hidden;padding:26px 34px;max-width:840px">
+                    <div style="font-family:'Source Serif 4',serif;font-size:30px;font-weight:600;letter-spacing:-0.02em">Permissões</div>
+                    <div style="font-size:12.5px;color:#7d7979;margin-top:6px;max-width:560px">O que o agente pode fazer sem perguntar. Vale para este projeto; o perfil global fica em Geral.</div>
+
+                    <div style="margin-top:26px;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9b9797">Perfil de execução</div>
+                    <div style="margin-top:12px;display:flex;flex-direction:column;gap:4px">
+                      <label style="display:flex;gap:11px;align-items:flex-start;padding:11px 13px;border-radius:8px;cursor:pointer;background:#f0efef" style-hover="background:#eae9e9">
+                        <span style="width:13px;height:13px;border-radius:50%;border:1px solid #bab6b6;flex:0 0 13px;margin-top:2px;display:block"></span>
+                        <span><span style="font-size:13px;font-weight:500;display:block">Somente leitura</span><span style="font-size:12px;color:#7d7979">Lê arquivos e responde. Nenhuma escrita, nenhum comando.</span></span>
+                      </label>
+                      <label style="display:flex;gap:11px;align-items:flex-start;padding:11px 13px;border-radius:8px;cursor:pointer;background:#e9f8ff">
+                        <span style="width:13px;height:13px;border-radius:50%;border:4px solid #0088b0;flex:0 0 13px;margin-top:2px;display:block;box-sizing:border-box"></span>
+                        <span><span style="font-size:13px;font-weight:600;display:block">Aprovação manual <span style="font-size:11px;font-weight:400;color:#006786">— recomendado</span></span><span style="font-size:12px;color:#004961">Edita arquivos livremente; qualquer comando fora do allowlist pede confirmação.</span></span>
+                      </label>
+                      <label style="display:flex;gap:11px;align-items:flex-start;padding:11px 13px;border-radius:8px;cursor:pointer;background:#f0efef" style-hover="background:#eae9e9">
+                        <span style="width:13px;height:13px;border-radius:50%;border:1px solid #bab6b6;flex:0 0 13px;margin-top:2px;display:block"></span>
+                        <span><span style="font-size:13px;font-weight:500;display:block">Autônomo em sandbox</span><span style="font-size:12px;color:#7d7979">Executa tudo dentro do contêiner, sem rede e sem acesso fora do workspace.</span></span>
+                      </label>
+                    </div>
+
+                    <div style="margin-top:28px;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9b9797">Comandos permitidos sem perguntar</div>
+                    <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">
+                      <sc-for list="{{ allowlist }}" as="c" hint-placeholder-count="7">
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;padding:4px 10px;background:#eae9e9;border-radius:999px;display:flex;align-items:center;gap:7px">{{ c }}<i class="ph-duotone ph-x" style="font-size:11px;color:#9b9797;cursor:pointer"></i></span>
+                      </sc-for>
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;padding:4px 10px;border:1px dashed #bab6b6;border-radius:999px;color:#7d7979;cursor:pointer">+ adicionar</span>
+                    </div>
+
+                    <div style="margin-top:28px;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9b9797">Limites</div>
+                    <div style="margin-top:6px">
+                      <sc-for list="{{ toggles }}" as="t" hint-placeholder-count="4">
+                        <div style="display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid #e4e1e1">
+                          <div style="flex:1"><div style="font-size:13px;font-weight:500">{{ t.label }}</div><div style="font-size:12px;color:#7d7979;margin-top:2px">{{ t.desc }}</div></div>
+                          <span style="{{ t.trackStyle }}"><span style="{{ t.knobStyle }}"></span></span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-if>
+
+                <!-- painel inferior -->
+                <sc-if value="{{ showBottom }}" hint-placeholder-val="{{ true }}">
+                  <div style="{{ bottomStyle }}">
+                    <div onMouseDown="{{ startDrag }}" style="height:6px;flex:0 0 6px;cursor:ns-resize;background:#f3f2f2;border-top:1px solid #e0dddd;display:flex;align-items:center;justify-content:center" style-hover="background:#cbeeff">
+                      <span style="width:30px;height:2px;border-radius:999px;background:#bab6b6;display:block"></span>
+                    </div>
+                    <div style="height:32px;flex:0 0 32px;display:flex;align-items:stretch;background:#eae9e9">
+                      <sc-for list="{{ bottomTabs }}" as="b" hint-placeholder-count="4">
+                        <button onClick="{{ b.go }}" style="{{ b.style }}">{{ b.label }}<span style="{{ b.countStyle }}">{{ b.count }}</span></button>
+                      </sc-for>
+                      <div style="flex:1"></div>
+                      <div style="display:flex;align-items:center;gap:12px;padding:0 12px;color:#7d7979">
+                        <i class="ph-duotone ph-trash" style="font-size:14px;cursor:pointer"></i>
+                        <i class="ph-duotone ph-arrows-out-simple" style="font-size:14px;cursor:pointer"></i>
+                      </div>
+                    </div>
+                    <div style="flex:1;min-height:0;overflow:hidden;background:#201e1d">
+                      <sc-if value="{{ bTerminal }}" hint-placeholder-val="{{ true }}">
+                        <div style="padding:10px 15px;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.8;color:#d7d3d3">
+                          <div><span style="color:#62c5ee">orion-api</span> <span style="color:#9b9797">on</span> <span style="color:#ff90b1">main</span> <span style="color:#62c5ee">❯</span> pnpm vitest run src/rag</div>
+                          <div style="color:#9b9797">RUN  v1.6.0 /Users/dr/dev/orion-api</div>
+                          <div><span style="color:#62c5ee">✓</span> src/rag/embed.test.ts (7 tests) <span style="color:#9b9797">412ms</span></div>
+                          <div><span style="color:#62c5ee">✓</span> src/rag/indexer.test.ts (5 tests) <span style="color:#9b9797">1.2s</span></div>
+                          <div style="color:#f3f2f2;margin-top:4px">Test Files  2 passed (2)</div>
+                          <div style="color:#f3f2f2">     Tests  12 passed | 1 skipped (13)</div>
+                          <div style="margin-top:4px"><span style="color:#62c5ee">orion-api</span> <span style="color:#9b9797">on</span> <span style="color:#ff90b1">main</span> <span style="color:#62c5ee">❯</span> <span style="width:7px;height:13px;background:#d7d3d3;display:inline-block;vertical-align:-2px;animation:blink 1s step-end infinite"></span></div>
+                        </div>
+                      </sc-if>
+                      <sc-if value="{{ bProblems }}" hint-placeholder-val="{{ false }}">
+                        <div style="padding:10px 15px;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:2;color:#d7d3d3">
+                          <div><span style="color:#ff90b1">erro</span> src/rag/embed.ts:31 — Property 'dimensions' is missing on type 'LocalEmbedder'</div>
+                          <div><span style="color:#edbb00">aviso</span> src/rag/indexer.ts:104 — 'legacyBatch' está declarado mas nunca é usado</div>
+                          <div><span style="color:#edbb00">aviso</span> src/config/models.ts:31 — provedor "openai-small" não existe mais no registro</div>
+                        </div>
+                      </sc-if>
+                      <sc-if value="{{ bLogs }}" hint-placeholder-val="{{ false }}">
+                        <div style="padding:10px 15px;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.9;color:#9b9797">
+                          <div><span style="color:#62c5ee">10:41:02</span> agent · sessão #184 iniciada · gpt-oss-120b · codex-cli</div>
+                          <div><span style="color:#62c5ee">10:41:03</span> tool · read_file src/rag/indexer.ts · 312 linhas · 0.4s</div>
+                          <div><span style="color:#62c5ee">10:41:09</span> rag · consulta "embedding provider" · 8 chunks · score máx 0.87</div>
+                          <div><span style="color:#62c5ee">10:41:22</span> patch · src/rag/embed.ts · +48 −12 · aplicado</div>
+                          <div><span style="color:#ff90b1">10:41:40</span> approval · pnpm prisma migrate deploy · aguardando usuário</div>
+                        </div>
+                      </sc-if>
+                      <sc-if value="{{ bIndex }}" hint-placeholder-val="{{ false }}">
+                        <div style="padding:12px 15px;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.9;color:#d7d3d3">
+                          <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+                            <span style="color:#62c5ee">indexando</span>
+                            <div style="flex:1;max-width:420px;height:4px;border-radius:999px;background:#444141;overflow:hidden"><div style="width:74%;height:4px;border-radius:999px;background:#62c5ee"></div></div>
+                            <span>74% · 3/4 arquivos · 61 chunks/s</span>
+                          </div>
+                          <div style="color:#9b9797">embed src/rag/embed.ts → 34 chunks</div>
+                          <div style="color:#9b9797">embed src/rag/indexer.ts → 41 chunks</div>
+                          <div style="color:#9b9797">embed src/rag/indexer.test.ts → 18 chunks</div>
+                          <div style="color:#605d5d">pendente src/config/models.ts</div>
+                        </div>
+                      </sc-if>
+                    </div>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+
+            <!-- COLUNA DIREITA -->
+            <sc-if value="{{ rightClosed }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ toggleRight }}" title="Restaurar coluna direita" style="width:26px;flex:0 0 26px;border:none;border-radius:10px;background:#eceaea;color:#7d7979;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:0" style-hover="background:#cbeeff;color:#006786">
+                <i class="ph-duotone ph-caret-line-left" style="font-size:15px"></i>
+                <span style="writing-mode:vertical-rl;font-size:10px;letter-spacing:0.14em;text-transform:uppercase">{{ rightTitle }}</span>
+              </button>
+            </sc-if>
+
+            <sc-if value="{{ rightOpen }}" hint-placeholder-val="{{ true }}">
+              <div style="width:326px;flex:0 0 326px;border-radius:10px;background:#f0efef;display:flex;flex-direction:column;min-height:0;overflow:hidden;box-shadow:0 1px 2px rgba(45,43,43,0.10)">
+
+                <div style="height:36px;flex:0 0 36px;display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 16px;border-bottom:1px solid #e4e1e1">
+                  <span style="font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:#7d7979">{{ rightTitle }}</span>
+                  <button onClick="{{ toggleRight }}" title="Minimizar coluna direita" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border:none;border-radius:6px;background:transparent;color:#7d7979;cursor:pointer" style-hover="background:#e0dddd;color:#006786"><i class="ph-duotone ph-caret-line-right" style="font-size:15px"></i></button>
+                </div>
+
+                <sc-if value="{{ rPlan }}" hint-placeholder-val="{{ true }}">
+                  <div style="padding:14px 16px 13px;border-bottom:1px solid #e4e1e1">
+                    <div style="display:flex;align-items:center;justify-content:space-between">
+                      <span style="font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:#7d7979">Plano de execução</span>
+                      <span style="{{ planBadgeStyle }}">{{ planBadge }}</span>
+                    </div>
+                    <div style="margin-top:12px;display:flex;flex-direction:column;gap:9px">
+                      <sc-for list="{{ plan }}" as="p" hint-placeholder-count="6">
+                        <div style="display:flex;gap:10px;align-items:flex-start">
+                          <span style="{{ p.dotStyle }}"></span>
+                          <span style="{{ p.textStyle }}">{{ p.label }}<span style="display:block;font-size:11px;color:#9b9797;font-weight:400;margin-top:2px">{{ p.meta }}</span></span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </div>
+
+                  <div style="padding:14px 16px 13px;border-bottom:1px solid #e4e1e1">
+                    <div style="display:flex;align-items:center;justify-content:space-between">
+                      <span style="font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:#7d7979">Contexto RAG</span>
+                      <span onClick="{{ goRag }}" style="font-size:11px;color:#006786;cursor:pointer">gerenciar</span>
+                    </div>
+                    <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+                      <sc-for list="{{ ragCtx }}" as="c" hint-placeholder-count="4">
+                        <div style="display:flex;align-items:center;gap:9px;font-family:'JetBrains Mono',monospace;font-size:11.5px;cursor:pointer" style-hover="color:#006786">
+                          <span style="width:26px;flex:0 0 26px;color:#006786">{{ c.score }}</span>
+                          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ c.path }}</span>
+                          <span style="color:#9b9797">{{ c.lines }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <div style="margin-top:11px;font-size:11px;color:#9b9797">8 chunks recuperados · 4,1k tokens no contexto</div>
+                  </div>
+
+                  <div style="padding:14px 16px;flex:1;min-height:0">
+                    <div style="display:flex;align-items:center;justify-content:space-between">
+                      <span style="font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:#7d7979">Arquivos alterados</span>
+                      <span onClick="{{ goDiff }}" style="font-size:11px;color:#006786;cursor:pointer">revisar</span>
+                    </div>
+                    <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+                      <sc-for list="{{ changed }}" as="c" hint-placeholder-count="3">
+                        <div onClick="{{ goDiff }}" style="display:flex;align-items:center;gap:9px;font-family:'JetBrains Mono',monospace;font-size:11.5px;cursor:pointer" style-hover="color:#006786">
+                          <span style="{{ c.tagStyle }}">{{ c.tag }}</span>
+                          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ c.path }}</span>
+                          <span style="color:#006786">{{ c.add }}</span><span style="color:#aa0b56">{{ c.del }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <div style="margin-top:16px;display:flex;gap:8px">
+                      <button style="flex:1;font-family:Inter;font-size:12px;font-weight:500;padding:7px 0;border:none;background:#0088b0;color:#fff;border-radius:6px;cursor:pointer" style-hover="background:#006786">Aceitar tudo</button>
+                      <button style="flex:1;font-family:Inter;font-size:12px;padding:7px 0;border:1px solid #d7d3d3;background:transparent;color:#444141;border-radius:6px;cursor:pointer" style-hover="border-color:#d6006c;color:#aa0b56">Descartar</button>
+                    </div>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ sDiff }}" hint-placeholder-val="{{ false }}">
+                  <div style="padding:14px 16px;border-bottom:1px solid #e4e1e1">
+                    <span style="font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:#7d7979">Sessão #184</span>
+                    <div style="margin-top:12px;display:flex;flex-direction:column;gap:9px">
+                      <sc-for list="{{ changed }}" as="c" hint-placeholder-count="3">
+                        <div style="display:flex;align-items:center;gap:9px;font-family:'JetBrains Mono',monospace;font-size:11.5px;cursor:pointer" style-hover="color:#006786">
+                          <span style="{{ c.tagStyle }}">{{ c.tag }}</span>
+                          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ c.path }}</span>
+                          <span style="color:#006786">{{ c.add }}</span><span style="color:#aa0b56">{{ c.del }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </div>
+                  <div style="padding:14px 16px;border-bottom:1px solid #e4e1e1">
+                    <span style="font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:#7d7979">Justificativa do agente</span>
+                    <p style="margin:10px 0 0;font-size:12.5px;line-height:1.6;color:#444141">O provedor remoto era o único ponto assíncrono do laço de indexação. Com <span style="font-family:'JetBrains Mono',monospace;font-size:12px">LocalEmbedder</span> o lote passa a ser síncrono e o cache por hash de conteúdo elimina 62% das chamadas em reindexações.</p>
+                  </div>
+                  <div style="padding:14px 16px">
+                    <span style="font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:#7d7979">Verificações</span>
+                    <div style="margin-top:10px;font-size:12.5px;line-height:2;color:#444141">
+                      <div><i class="ph-duotone ph-check-circle" style="font-size:14px;color:#0088b0;vertical-align:-2px"></i> vitest · 12 passaram</div>
+                      <div><i class="ph-duotone ph-check-circle" style="font-size:14px;color:#0088b0;vertical-align:-2px"></i> tsc --noEmit · limpo</div>
+                      <div><i class="ph-duotone ph-warning-circle" style="font-size:14px;color:#d6006c;vertical-align:-2px"></i> eslint · 2 avisos</div>
+                    </div>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ sHistory }}" hint-placeholder-val="{{ false }}">
+                  <div style="padding:14px 16px;border-bottom:1px solid #e4e1e1">
+                    <div style="font-family:'Source Serif 4',serif;font-size:20px;font-weight:600;line-height:1.2">Refatorar pipeline de indexação</div>
+                    <div style="font-size:11.5px;color:#9b9797;margin-top:6px;font-family:'JetBrains Mono',monospace">hoje 10:41 → 10:47 · 6 min 12 s</div>
+                  </div>
+                  <div style="padding:14px 16px;border-bottom:1px solid #e4e1e1;font-size:12.5px;line-height:2.1;color:#444141">
+                    <div>Modelo <span style="float:right;font-family:'JetBrains Mono',monospace;font-size:11.5px">GPT-OSS 120B</span></div>
+                    <div>Executor <span style="float:right;font-family:'JetBrains Mono',monospace;font-size:11.5px">Codex CLI</span></div>
+                    <div>Tokens <span style="float:right;font-family:'JetBrains Mono',monospace;font-size:11.5px">184k / 21k</span></div>
+                    <div>Tool calls <span style="float:right;font-family:'JetBrains Mono',monospace;font-size:11.5px">17</span></div>
+                    <div>Aprovações <span style="float:right;font-family:'JetBrains Mono',monospace;font-size:11.5px">1 concedida</span></div>
+                  </div>
+                  <div style="padding:14px 16px;flex:1">
+                    <span style="font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:#7d7979">Alterações</span>
+                    <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+                      <sc-for list="{{ changed }}" as="c" hint-placeholder-count="3">
+                        <div style="display:flex;align-items:center;gap:9px;font-family:'JetBrains Mono',monospace;font-size:11.5px">
+                          <span style="{{ c.tagStyle }}">{{ c.tag }}</span>
+                          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ c.path }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <div style="margin-top:16px;display:flex;gap:8px">
+                      <button style="flex:1;font-family:Inter;font-size:12px;font-weight:500;padding:7px 0;border:1px solid #0088b0;background:transparent;color:#006786;border-radius:6px;cursor:pointer" style-hover="background:#cbeeff">Retomar</button>
+                      <button style="flex:1;font-family:Inter;font-size:12px;padding:7px 0;border:1px solid #d7d3d3;background:transparent;color:#444141;border-radius:6px;cursor:pointer" style-hover="border-color:#d6006c;color:#aa0b56">Reverter</button>
+                    </div>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ sSettings }}" hint-placeholder-val="{{ false }}">
+                  <div style="padding:14px 16px;border-bottom:1px solid #e4e1e1">
+                    <span style="font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:#7d7979">Efeito das permissões</span>
+                    <p style="margin:10px 0 0;font-size:12.5px;line-height:1.6;color:#444141">No perfil atual, 4 das 17 chamadas da última sessão teriam pedido confirmação.</p>
+                  </div>
+                  <div style="padding:14px 16px">
+                    <span style="font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:#7d7979">Últimas decisões</span>
+                    <div style="margin-top:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:2;color:#444141">
+                      <div><span style="color:#006786">permitido</span> pnpm vitest run</div>
+                      <div><span style="color:#006786">permitido</span> git status --porcelain</div>
+                      <div><span style="color:#aa0b56">negado</span> rm -rf ./prisma/migrations</div>
+                      <div><span style="color:#aa0b56">negado</span> curl -X POST api.stripe.com</div>
+                    </div>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-if>
+          </div>
+
+          <!-- barra de estado -->
+          <div style="height:24px;flex:0 0 24px;display:flex;align-items:center;gap:16px;padding:0 12px;background:#eae9e9;border-top:1px solid #d7d3d3;font-family:'JetBrains Mono',monospace;font-size:11px;color:#605d5d">
+            <span style="{{ statusStyle }}">{{ statusText }}</span>
+            <span>main ↑2</span>
+            <span>Ln 88, Col 24</span>
+            <span>UTF-8 · LF · TypeScript</span>
+            <div style="flex:1"></div>
+            <span>índice 92%</span>
+            <span>ctx 12.4k/128k</span>
+            <span>0,42 US$ nesta sessão</span>
+          </div>
+
+          <!-- ─── APROVAÇÃO ─── -->
+          <sc-if value="{{ sApproval }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;inset:0;background:rgba(32,30,29,0.42);display:flex;align-items:center;justify-content:center">
+              <div style="width:640px;background:#f3f2f2;border-radius:12px;box-shadow:0 12px 32px rgba(45,43,43,0.34);overflow:hidden">
+                <div style="padding:22px 26px 0;display:flex;gap:14px;align-items:flex-start">
+                  <i class="ph-duotone ph-shield-warning" style="font-size:26px;color:#d6006c;margin-top:2px"></i>
+                  <div>
+                    <div style="font-family:'Source Serif 4',serif;font-size:23px;font-weight:600;letter-spacing:-0.01em">Permitir este comando?</div>
+                    <div style="font-size:12.5px;color:#605d5d;margin-top:5px">O agente pediu para executar um comando fora do allowlist do projeto.</div>
+                  </div>
+                </div>
+
+                <div style="margin:18px 26px 0;background:#201e1d;border-radius:8px;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#f3f2f2;line-height:1.7">
+                  <span style="color:#62c5ee">$</span> pnpm prisma migrate deploy --schema ./prisma/schema.prisma
+                </div>
+
+                <div style="margin:16px 26px 0;display:grid;grid-template-columns:112px 1fr;gap:7px 16px;font-size:12.5px">
+                  <span style="color:#9b9797">Diretório</span><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px">~/dev/orion-api</span>
+                  <span style="color:#9b9797">Alcance</span><span>escrita no banco <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px">orion_dev</span> · rede local</span>
+                  <span style="color:#9b9797">Reversível</span><span style="color:#aa0b56">não — a migração 20260810_add_vector_index é destrutiva na coluna <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px">embeddings</span></span>
+                  <span style="color:#9b9797">Por quê</span><span style="max-width:420px">Os testes de indexação exigem o índice vetorial pgvector aplicado antes da suíte de regressão.</span>
+                </div>
+
+                <div style="margin:16px 26px 0;display:flex;gap:6px">
+                  <span style="font-size:11px;padding:3px 9px;background:#ffdee6;color:#aa0b56;border-radius:999px">destrutivo</span>
+                  <span style="font-size:11px;padding:3px 9px;background:#eae9e9;color:#605d5d;border-radius:999px">fora do allowlist</span>
+                  <span style="font-size:11px;padding:3px 9px;background:#eae9e9;color:#605d5d;border-radius:999px">1ª vez neste projeto</span>
+                </div>
+
+                <div style="margin-top:22px;padding:14px 26px;background:#eae9e9;display:flex;align-items:center;gap:9px">
+                  <span style="font-size:11.5px;color:#7d7979;margin-right:auto">Expira em 04:52 · nada roda sem sua resposta</span>
+                  <button onClick="{{ goWorkspace }}" style="font-family:Inter;font-size:12.5px;padding:8px 14px;border:1px solid #d7d3d3;background:transparent;color:#444141;border-radius:6px;cursor:pointer" style-hover="border-color:#d6006c;color:#aa0b56">Negar</button>
+                  <button onClick="{{ goAgent }}" style="font-family:Inter;font-size:12.5px;padding:8px 14px;border:1px solid #201e1d;background:transparent;color:#201e1d;border-radius:6px;cursor:pointer" style-hover="background:#d7d3d3">Permitir sempre aqui</button>
+                  <button onClick="{{ goAgent }}" style="font-family:Inter;font-size:12.5px;font-weight:500;padding:8px 18px;border:none;background:#0088b0;color:#fff;border-radius:6px;cursor:pointer" style-hover="background:#006786">Permitir uma vez <span style="opacity:0.7">⌘↩</span></button>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;screen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;start&quot;,&quot;workspace&quot;,&quot;agent&quot;,&quot;approval&quot;,&quot;rag&quot;,&quot;diff&quot;,&quot;history&quot;,&quot;settings&quot;],&quot;default&quot;:&quot;start&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Tela&quot;},&quot;leftPanel&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;rightPanel&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;}}">
+class Component extends DCLogic {
+  state = { screen: null, bottomTab: 'Terminal', left: null, right: null, bottomH: null, scale: 1 };
+
+  componentDidMount() {
+    this._fit = () => this.setState({ scale: Math.min(1, (document.documentElement.clientWidth - 48) / 1440) });
+    this._fit();
+    window.addEventListener('resize', this._fit);
+  }
+  componentWillUnmount() { window.removeEventListener('resize', this._fit); }
+
+  go(s) { return () => this.setState({ screen: s, bottomTab: s === 'rag' ? 'Indexação' : this.state.bottomTab }); }
+
+  bottomH() { return this.state.bottomH ?? 208; }
+
+  startDrag = (e) => {
+    e.preventDefault();
+    const y0 = e.clientY, h0 = this.bottomH(), sc = this.state.scale || 1;
+    const mv = (ev) => this.setState({ bottomH: Math.max(90, Math.min(500, h0 - (ev.clientY - y0) / sc)) });
+    const up = () => { document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); };
+    document.addEventListener('mousemove', mv);
+    document.addEventListener('mouseup', up);
+  };
+
+  renderVals() {
+    const screen = this.state.screen ?? this.props.screen ?? 'start';
+    const sAgent = screen === 'agent', sApproval = screen === 'approval';
+    const sWorkspace = screen === 'workspace';
+    const sChat = sWorkspace || sAgent || sApproval;
+    const sDiff = screen === 'diff', sRag = screen === 'rag', sHistory = screen === 'history', sSettings = screen === 'settings';
+    const sStart = screen === 'start';
+
+    const defLeft = this.props.leftPanel ?? true;
+    const defRight = this.props.rightPanel ?? true;
+    const leftOpen = this.state.left ?? defLeft;
+    const rightOpen = this.state.right ?? defRight;
+
+    const SCREENS = [
+      ['start', 'Início'], ['workspace', 'Workspace'], ['agent', 'Agente executando'],
+      ['approval', 'Aprovação'], ['rag', 'RAG'], ['diff', 'Diff'],
+      ['history', 'Histórico'], ['settings', 'Configurações']
+    ];
+    const navBase = 'font-family:Inter;font-size:12px;padding:6px 13px;border-radius:999px;cursor:pointer;border:1px solid ';
+    const screens = SCREENS.map(([id, label]) => ({
+      label, go: this.go(id),
+      style: navBase + (screen === id ? '#0088b0;background:#0088b0;color:#fff;font-weight:500' : '#d0cdcd;background:transparent;color:#605d5d')
+    }));
+
+    const scale = this.state.scale;
+    const outerStyle = 'width:1440px;height:900px;transform:scale(' + scale + ');transform-origin:top left;margin-bottom:' + (900 * scale - 900) + 'px';
+    const innerStyle = 'width:1440px;height:900px;border-radius:12px;box-shadow:0 12px 32px rgba(45,43,43,0.22);overflow:hidden';
+
+    // rail
+    const RAIL = [
+      ['workspace', 'ph-duotone ph-chat-teardrop-dots', 'Chat do agente'],
+      ['workspace', 'ph-duotone ph-files', 'Explorador'],
+      ['diff', 'ph-duotone ph-git-diff', 'Alterações'],
+      ['rag', 'ph-duotone ph-database', 'RAG'],
+      ['agent', 'ph-duotone ph-robot', 'Agentes'],
+      ['history', 'ph-duotone ph-clock-counter-clockwise', 'Histórico'],
+      ['workspace', 'ph-duotone ph-terminal-window', 'Terminal']
+    ];
+    const railActive = sRag ? 3 : sHistory ? 5 : sDiff ? 2 : sAgent ? 4 : sSettings ? -1 : 0;
+    const rail = RAIL.map(([id, icon, title], i) => ({
+      icon, title, go: this.go(id),
+      style: 'width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:none;border-radius:8px;cursor:pointer;' +
+        (i === railActive ? 'background:#cbeeff;color:#006786' : 'background:transparent;color:#605d5d')
+    }));
+
+    // center tabs
+    const TABS = [
+      ['Chat', 'ph-duotone ph-chat-teardrop-dots', 'workspace', '#184'],
+      ['Editor', 'ph-duotone ph-code', 'workspace', 'embed.ts'],
+      ['Diff', 'ph-duotone ph-git-diff', 'diff', '3']
+    ];
+    const activeTab = sDiff ? 'Diff' : 'Chat';
+    const tabs = TABS.map(([label, icon, id, hint]) => ({
+      label, icon, hint, go: this.go(id),
+      style: 'display:flex;align-items:center;gap:7px;font-family:Inter;font-size:12.5px;padding:0 16px;border:none;cursor:pointer;' +
+        (label === activeTab
+          ? 'background:#f3f2f2;color:#201e1d;font-weight:600;box-shadow:inset 0 -2px 0 #0088b0'
+          : 'background:transparent;color:#605d5d')
+    }));
+
+    // file tree
+    const TREE = [
+      [0, 'orion-api', 'ph-duotone ph-folder-open', '#0088b0', ''],
+      [1, 'src', 'ph-duotone ph-folder-open', '#7d7979', ''],
+      [2, 'rag', 'ph-duotone ph-folder-open', '#7d7979', ''],
+      [3, 'embed.ts', 'ph-duotone ph-file-ts', '#0088b0', 'M'],
+      [3, 'indexer.ts', 'ph-duotone ph-file-ts', '#0088b0', 'M'],
+      [3, 'indexer.test.ts', 'ph-duotone ph-file-ts', '#0088b0', 'A'],
+      [3, 'chunker.ts', 'ph-duotone ph-file-ts', '#9b9797', ''],
+      [3, 'store.ts', 'ph-duotone ph-file-ts', '#9b9797', ''],
+      [2, 'agents', 'ph-duotone ph-folder', '#7d7979', ''],
+      [2, 'config', 'ph-duotone ph-folder', '#7d7979', ''],
+      [2, 'server.ts', 'ph-duotone ph-file-ts', '#9b9797', ''],
+      [1, 'prisma', 'ph-duotone ph-folder', '#7d7979', ''],
+      [1, 'tests', 'ph-duotone ph-folder', '#7d7979', ''],
+      [0, 'package.json', 'ph-duotone ph-file-code', '#9b9797', ''],
+      [0, 'AGENTS.md', 'ph-duotone ph-file-text', '#9b9797', ''],
+      [0, 'tsconfig.json', 'ph-duotone ph-file-code', '#9b9797', '']
+    ];
+    const tree = TREE.map(([d, name, icon, iconColor, badge]) => ({
+      name, icon, iconColor, badge,
+      style: 'display:flex;align-items:center;gap:7px;padding:2px 8px 2px ' + (8 + d * 13) + 'px;border-radius:6px;cursor:pointer;' +
+        (name === 'embed.ts' ? 'background:#cbeeff;color:#004961;font-weight:500' : 'color:#444141')
+    }));
+
+    // bottom panel
+    const BT = [['Terminal', '2'], ['Problemas', '3'], ['Logs', ''], ['Indexação', '74%']];
+    const bt = this.state.bottomTab;
+    const bottomTabs = BT.map(([label, count]) => ({
+      label, count,
+      go: () => this.setState({ bottomTab: label }),
+      style: 'display:flex;align-items:center;gap:7px;font-family:Inter;font-size:11.5px;padding:0 14px;border:none;cursor:pointer;' +
+        (label === bt ? 'background:#201e1d;color:#f3f2f2;font-weight:500' : 'background:transparent;color:#605d5d'),
+      countStyle: count
+        ? 'font-family:JetBrains Mono,monospace;font-size:10px;padding:1px 6px;border-radius:999px;' +
+          (label === bt ? 'background:#444141;color:#d7d3d3' : 'background:#dedcdc;color:#7d7979')
+        : 'display:none'
+    }));
+    const bottomStyle = 'flex:0 0 ' + this.bottomH() + 'px;height:' + this.bottomH() + 'px;display:flex;flex-direction:column;min-height:0';
+
+    // diff
+    const D = [
+      [14, 'export class RemoteEmbedder implements Embedder {', 0],
+      [15, '  constructor(private client: OpenAIClient) {}', 0],
+      [16, '', 0],
+      [17, '  async embed(text: string): Promise<number[]> {', -1],
+      [18, '    const res = await this.client.embeddings.create({', -1],
+      [19, '      model: "text-embedding-3-small",', -1],
+      [20, '      input: text,', -1],
+      [21, '    });', -1],
+      [22, '    return res.data[0].embedding;', -1],
+      [23, '  }', 0],
+      [24, '}', 0],
+      [25, '', 0],
+      [26, 'export const defaultEmbedder =', 0],
+      [27, '  new RemoteEmbedder(openai);', -1],
+      [28, '', 0],
+      [29, '', 0],
+      [30, '', 0],
+      [31, '', 0]
+    ];
+    const D2 = [
+      [14, 'export class LocalEmbedder implements Embedder {', 0],
+      [15, '  readonly dimensions = 384;', 1],
+      [16, '', 0],
+      [17, '  constructor(private model = "bge-small-pt") {}', 1],
+      [18, '', 0],
+      [19, '  async embed(text: string): Promise<number[]> {', 1],
+      [20, '    const key = hash(text);', 1],
+      [21, '    const hit = this.cache.get(key);', 1],
+      [22, '    if (hit) return hit;', 1],
+      [23, '    const vec = await runtime.encode(this.model, text);', 1],
+      [24, '    this.cache.set(key, vec);', 1],
+      [25, '    return vec;', 1],
+      [26, '  }', 0],
+      [27, '}', 0],
+      [28, '', 0],
+      [29, 'export const defaultEmbedder =', 0],
+      [30, '  new LocalEmbedder();', 1],
+      [31, '', 0]
+    ];
+    const dl = (k) => 'display:flex;gap:10px;padding:0 10px;' +
+      (k === 1 ? 'background:#e9f8ff' : k === -1 ? 'background:#fff1f4' : '');
+    const diffL = D.map(([n, t, k]) => ({ n, t, style: dl(k) }));
+    const diffR = D2.map(([n, t, k]) => ({ n, t, style: dl(k) }));
+
+    // plan
+    const PLAN = sAgent
+      ? [['Ler pipeline atual', 'read_file · 2 arquivos', 'done'],
+         ['Mapear provedor de embeddings', '3 ocorrências', 'done'],
+         ['Trocar por embedder local', 'apply_patch · +48 −12', 'done'],
+         ['Escrever testes de regressão', 'escrevendo agora', 'run'],
+         ['Rodar suíte com cobertura', 'pendente', 'todo'],
+         ['Resumir alterações', 'pendente', 'todo']]
+      : [['Ler pipeline atual', 'read_file · 2 arquivos', 'done'],
+         ['Mapear provedor de embeddings', '3 ocorrências', 'done'],
+         ['Trocar por embedder local', 'apply_patch · +48 −12', 'done'],
+         ['Escrever testes de regressão', '+62 linhas', 'done'],
+         ['Rodar suíte com cobertura', '12 passaram', 'done'],
+         ['Resumir alterações', 'concluído', 'done']];
+    const plan = PLAN.map(([label, meta, k]) => ({
+      label, meta,
+      dotStyle: 'width:9px;height:9px;border-radius:50%;flex:0 0 9px;margin-top:5px;display:block;' +
+        (k === 'done' ? 'background:#0088b0' : k === 'run' ? 'background:#d6006c;box-shadow:0 0 0 3px #ffdee6' : 'background:#d7d3d3'),
+      textStyle: 'font-size:12.5px;font-weight:500;line-height:1.35;' + (k === 'todo' ? 'color:#9b9797' : 'color:#201e1d')
+    }));
+    const planBadge = sAgent ? 'passo 4 de 6' : '6 de 6';
+    const planBadgeStyle = 'font-size:10.5px;font-family:JetBrains Mono,monospace;padding:2px 8px;border-radius:999px;' +
+      (sAgent ? 'background:#ffdee6;color:#aa0b56' : 'background:#cbeeff;color:#004961');
+
+    const ragCtx = [
+      { score: '.91', path: 'src/rag/indexer.ts', lines: '61-118' },
+      { score: '.87', path: 'src/rag/embed.ts', lines: '1-52' },
+      { score: '.74', path: 'AGENTS.md', lines: '12-40' },
+      { score: '.68', path: 'src/config/models.ts', lines: '20-44' }
+    ];
+
+    const tagS = (c, bg) => 'width:17px;flex:0 0 17px;text-align:center;font-size:10px;font-weight:700;border-radius:4px;color:' + c + ';background:' + bg;
+    const changed = [
+      { tag: 'M', path: 'src/rag/embed.ts', add: '+48', del: '−12', tagStyle: tagS('#004961', '#cbeeff') },
+      { tag: 'M', path: 'src/rag/indexer.ts', add: '+21', del: '−9', tagStyle: tagS('#004961', '#cbeeff') },
+      { tag: 'A', path: 'src/rag/indexer.test.ts', add: '+62', del: '−0', tagStyle: tagS('#aa0b56', '#ffdee6') }
+    ];
+
+    const badge = (t) => 'font-size:10.5px;padding:2px 9px;border-radius:999px;' +
+      (t === 'ok' ? 'background:#cbeeff;color:#004961' : t === 'warn' ? 'background:#ffdee6;color:#aa0b56' : 'background:#eae9e9;color:#605d5d');
+    const ragRows = [
+      { glob: 'src/**/*.ts', files: '184', chunks: '6.203', when: 'há 12 min', state: 'sincronizado', badgeStyle: badge('ok') },
+      { glob: 'prisma/**/*.prisma', files: '4', chunks: '138', when: 'há 12 min', state: 'sincronizado', badgeStyle: badge('ok') },
+      { glob: 'docs/**/*.md', files: '31', chunks: '1.402', when: 'há 3 dias', state: 'deriva', badgeStyle: badge('warn') },
+      { glob: 'AGENTS.md', files: '1', chunks: '18', when: 'há 12 min', state: 'sincronizado', badgeStyle: badge('ok') },
+      { glob: 'node_modules/**', files: '—', chunks: '—', when: '—', state: 'ignorado', badgeStyle: badge('mute') }
+    ];
+
+    const historyToday = [
+      { id: '#184', title: 'Refatorar pipeline de indexação', detail: 'gpt-oss-120b · 17 tool calls · 1 aprovação', files: '3 arquivos', tokens: '184k / 21k', state: 'concluída', badgeStyle: badge('ok') },
+      { id: '#183', title: 'Corrigir flake no teste de chunker', detail: 'gpt-oss-120b · 6 tool calls', files: '1 arquivo', tokens: '42k / 5k', state: 'concluída', badgeStyle: badge('ok') },
+      { id: '#182', title: 'Migrar Prisma para Postgres 16', detail: 'gpt-oss-120b · 11 tool calls · comando negado', files: '0 arquivos', tokens: '96k / 12k', state: 'negada', badgeStyle: badge('warn') }
+    ];
+    const historyYest = [
+      { id: '#181', title: 'Extrair cliente HTTP para pacote', detail: 'gpt-oss-20b · 22 tool calls', files: '9 arquivos', tokens: '311k / 38k', state: 'revertida', badgeStyle: badge('warn') },
+      { id: '#180', title: 'Documentar contrato de agentes', detail: 'gpt-oss-120b · 4 tool calls', files: '2 arquivos', tokens: '58k / 14k', state: 'concluída', badgeStyle: badge('ok') },
+      { id: '#179', title: 'Reindexar coleção documentação', detail: 'sem modelo · tarefa de manutenção', files: '—', tokens: '—', state: 'concluída', badgeStyle: badge('ok') }
+    ];
+
+    const allowlist = ['git status', 'git diff', 'pnpm test', 'pnpm vitest run', 'pnpm lint', 'tsc --noEmit', 'ls', 'cat'];
+    const TOG = [
+      ['Confirmar antes de qualquer acesso à rede', 'Inclui instalação de dependências e chamadas HTTP.', true],
+      ['Bloquear escrita fora do workspace', 'O agente nunca toca em caminhos acima de ~/dev/orion-api.', true],
+      ['Pedir aprovação para migrações de banco', 'Qualquer comando que altere schema ou dados.', true],
+      ['Executar testes automaticamente após editar', 'Roda a suíte relacionada sem perguntar.', false]
+    ];
+    const toggles = TOG.map(([label, desc, on]) => ({
+      label, desc,
+      trackStyle: 'width:34px;height:19px;border-radius:999px;display:flex;align-items:center;padding:0 2px;flex:0 0 34px;cursor:pointer;' +
+        (on ? 'background:#0088b0;justify-content:flex-end' : 'background:#d0cdcd;justify-content:flex-start'),
+      knobStyle: 'width:15px;height:15px;border-radius:50%;background:#fff;display:block'
+    }));
+
+    const statusText = sAgent ? '● agente executando · passo 4/6' : sApproval ? '● aguardando aprovação' : '● ocioso';
+    const statusStyle = 'color:' + (sAgent || sApproval ? '#aa0b56' : '#006786');
+
+    const leftTitle = sRag ? 'Coleções' : sHistory ? 'Filtros' : sSettings ? 'Configurações' : 'Explorador';
+    const rightTitle = sDiff ? 'Revisão' : sHistory ? 'Sessão' : sSettings ? 'Impacto' : 'Sessão do agente';
+
+    return {
+      screens, outerStyle, innerStyle, screenLabel: screen,
+      sStart, sShell: !sStart, sChat, sAgent, sApproval, sWorkspace, sDiff, sRag, sHistory, sSettings,
+      notAgent: !sAgent,
+      expFiles: sChat || sDiff,
+      leftOpen, leftClosed: !leftOpen, rightOpen, rightClosed: !rightOpen,
+      leftTitle, rightTitle,
+      rPlan: sChat,
+      showBottom: !sSettings && !sHistory,
+      bTerminal: bt === 'Terminal', bProblems: bt === 'Problemas', bLogs: bt === 'Logs', bIndex: bt === 'Indexação',
+      bottomTabs, bottomStyle, rail, tabs, tree, diffL, diffR,
+      plan, planBadge, planBadgeStyle, ragCtx, changed, ragRows,
+      historyToday, historyYest, allowlist, toggles, statusText, statusStyle,
+      focusBtnStyle: 'border:none;background:' + (!leftOpen && !rightOpen ? '#cbeeff' : 'transparent') +
+        ';cursor:pointer;color:' + (!leftOpen && !rightOpen ? '#006786' : '#605d5d') +
+        ';padding:5px;border-radius:6px;display:flex',
+      startDrag: this.startDrag,
+      toggleLeft: () => this.setState({ left: !leftOpen }),
+      toggleRight: () => this.setState({ right: !rightOpen }),
+      toggleFocus: () => { const f = leftOpen || rightOpen; this.setState({ left: !f, right: !f }); },
+      goWorkspace: this.go('workspace'), goAgent: this.go('agent'), goApproval: this.go('approval'),
+      goDiff: this.go('diff'), goRag: this.go('rag'), goSettings: this.go('settings')
+    };
+  }
+}
+</script>
+</body>
+</html>

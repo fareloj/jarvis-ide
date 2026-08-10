@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>JARVIS</title>
+    <link rel="stylesheet" href="../node_modules/@phosphor-icons/web/src/duotone/style.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-frame">
+      <header class="titlebar">
+        <div class="traffic-lights no-drag" aria-label="Controles da janela">
+          <button class="traffic-button close" data-window-action="close" aria-label="Fechar">
+            <i class="ph-duotone ph-x"></i>
+          </button>
+          <button class="traffic-button minimize" data-window-action="minimize" aria-label="Minimizar">
+            <i class="ph-duotone ph-minus"></i>
+          </button>
+          <button class="traffic-button maximize" data-window-action="maximize" aria-label="Maximizar ou restaurar">
+            <i class="ph-duotone ph-arrows-out-simple"></i>
+          </button>
+        </div>
+
+        <button class="brand no-drag" data-action="home" aria-label="Ir ao início">JARVIS</button>
+
+        <div class="project-crumb no-drag" id="projectCrumb">
+          <i class="ph-duotone ph-folder"></i>
+          <span id="projectName">orion-api</span>
+          <span class="slash">/</span>
+          <span class="branch">main</span>
+        </div>
+
+        <div class="titlebar-drag-region"></div>
+
+        <div class="titlebar-actions no-drag">
+          <button class="top-pill" id="modelPicker" title="Modelo ativo">
+            <i class="ph-duotone ph-brain"></i>
+            <span id="activeModelLabel">GPT-OSS 120B</span>
+            <i class="ph-duotone ph-caret-down subtle"></i>
+          </button>
+          <button class="top-pill" title="Perfil do MVP">
+            <i class="ph-duotone ph-chat-circle-dots"></i>
+            <span>Chat simples</span>
+          </button>
+          <button class="connection-pill" id="connectionStatus" title="Estado do backend">
+            <span class="status-dot checking"></span>
+            <span class="connection-label">conectando…</span>
+          </button>
+          <button class="icon-button" data-nav="settings" title="Configurações">
+            <i class="ph-duotone ph-gear"></i>
+          </button>
+        </div>
+      </header>
+
+      <main class="welcome-screen" id="welcomeScreen">
+        <section class="welcome-primary">
+          <div class="welcome-mark">JARVIS</div>
+          <p class="welcome-tagline">Um ambiente onde o agente pensa com você — simples agora, extensível depois.</p>
+
+          <div class="welcome-actions">
+            <button class="button primary" data-action="open-project">
+              <i class="ph-duotone ph-folder-open"></i>Abrir projeto
+            </button>
+            <button class="button secondary" data-action="enter-workspace">
+              <i class="ph-duotone ph-chat-teardrop-dots"></i>Abrir demonstração
+            </button>
+            <button class="button ghost" data-action="new-chat">
+              <i class="ph-duotone ph-sparkle"></i>Novo chat
+            </button>
+          </div>
+
+          <div class="recent-heading">Projetos recentes</div>
+          <div class="recent-projects">
+            <button class="recent-project" data-action="enter-workspace">
+              <span>
+                <strong>orion-api</strong>
+                <small>~/dev/orion-api · main</small>
+              </span>
+              <span class="recent-meta">há 12 minutos<small>chat disponível</small></span>
+            </button>
+            <button class="recent-project" data-action="enter-workspace">
+              <span>
+                <strong>atlas-web</strong>
+                <small>~/dev/atlas-web · feat/checkout</small>
+              </span>
+              <span class="recent-meta">ontem<small>7 mensagens</small></span>
+            </button>
+          </div>
+
+          <div class="welcome-shortcuts">
+            <span><kbd>Ctrl</kbd><kbd>O</kbd> abrir projeto</span>
+            <span><kbd>Ctrl</kbd><kbd>K</kbd> paleta</span>
+            <span><kbd>Ctrl</kbd><kbd>N</kbd> novo chat</span>
+          </div>
+        </section>
+
+        <aside class="welcome-aside">
+          <div>
+            <p class="eyebrow">Ambiente</p>
+            <dl class="environment-list">
+              <div><dt>Modelo</dt><dd>GPT-OSS 120B</dd></div>
+              <div><dt>Modo</dt><dd>Chat simples</dd></div>
+              <div><dt>Interface</dt><dd>Electron</dd></div>
+              <div><dt>Backend</dt><dd id="welcomeBackend">verificando</dd></div>
+            </dl>
+          </div>
+          <div class="mvp-note">
+            <span class="mvp-index">01</span>
+            <p class="eyebrow">Escopo atual</p>
+            <h2>Conversa primeiro.</h2>
+            <p>Este MVP conecta a interface ao Ollama. Terminal, RAG, skills e edição assistida aparecem como prévias visuais e serão ativados nas próximas etapas.</p>
+          </div>
+        </aside>
+      </main>
+
+      <main class="workspace hidden" id="workspace">
+        <nav class="activity-rail" aria-label="Navegação principal">
+          <button class="rail-button active" data-nav="chat" title="Chat"><i class="ph-duotone ph-chat-teardrop-dots"></i></button>
+          <button class="rail-button" data-nav="files" title="Arquivos"><i class="ph-duotone ph-files"></i></button>
+          <button class="rail-button" data-nav="diff" title="Alterações"><i class="ph-duotone ph-git-diff"></i></button>
+          <button class="rail-button" data-nav="rag" title="RAG"><i class="ph-duotone ph-database"></i></button>
+          <button class="rail-button" data-nav="history" title="Histórico"><i class="ph-duotone ph-clock-counter-clockwise"></i></button>
+          <span class="rail-spacer"></span>
+          <button class="rail-button" data-nav="settings" title="Configurações"><i class="ph-duotone ph-gear"></i></button>
+        </nav>
+
+        <aside class="sidebar" id="sidebar">
+          <div class="panel-heading">
+            <span id="sidebarTitle">Explorador</span>
+            <button class="panel-icon" data-action="toggle-sidebar" title="Recolher painel"><i class="ph-duotone ph-caret-line-left"></i></button>
+          </div>
+          <div class="sidebar-body" id="sidebarBody"></div>
+          <div class="sidebar-footer" id="sidebarFooter"><span>12 arquivos</span><span class="accent-text">MVP</span></div>
+        </aside>
+
+        <button class="collapsed-handle hidden" id="sidebarHandle" data-action="toggle-sidebar" title="Abrir painel esquerdo">
+          <i class="ph-duotone ph-caret-line-right"></i>
+        </button>
+
+        <section class="workbench">
+          <div class="editor-tabs">
+            <button class="editor-tab active" data-view="chat"><i class="ph-duotone ph-chat-circle-dots"></i>Chat</button>
+            <button class="editor-tab" data-view="editor"><i class="ph-duotone ph-code"></i>Editor <span class="tab-detail">app.ts</span></button>
+            <button class="editor-tab" data-view="diff"><i class="ph-duotone ph-git-diff"></i>Diff <span class="tab-badge">3</span></button>
+            <span class="tabs-spacer"></span>
+            <button class="panel-icon" data-action="toggle-inspector" title="Alternar painel de contexto"><i class="ph-duotone ph-columns"></i></button>
+          </div>
+
+          <section class="content-view chat-view" data-content-view="chat">
+            <div class="chat-scroll" id="chatScroll">
+              <div class="chat-feed" id="chatFeed">
+                <article class="message assistant-message welcome-message">
+                  <div class="avatar assistant-avatar"><i class="ph-duotone ph-sparkle"></i></div>
+                  <div class="message-content">
+                    <div class="message-meta"><strong>JARVIS</strong><span>agora</span></div>
+                    <p>Olá. O frontend está conectado ao backend mínimo de chat. Neste estágio eu converso com você usando o modelo configurado no Ollama, sem acessar arquivos, terminal, RAG ou skills.</p>
+                    <div class="scope-tags">
+                      <span><i class="ph-duotone ph-check-circle"></i>Chat</span>
+                      <span class="inactive"><i class="ph-duotone ph-lock"></i>Tools desativadas</span>
+                      <span class="inactive"><i class="ph-duotone ph-lock"></i>RAG desativado</span>
+                    </div>
+                  </div>
+                </article>
+              </div>
+            </div>
+
+            <div class="composer-wrap">
+              <form class="composer" id="chatForm">
+                <textarea id="chatInput" rows="1" placeholder="Converse com o JARVIS…" aria-label="Mensagem"></textarea>
+                <div class="composer-toolbar">
+                  <div>
+                    <button type="button" class="composer-icon" title="Anexos estarão disponíveis em breve"><i class="ph-duotone ph-paperclip"></i></button>
+                    <button type="button" class="composer-icon" title="RAG estará disponível em breve"><i class="ph-duotone ph-database"></i></button>
+                  </div>
+                  <div class="composer-actions">
+                    <span class="composer-hint"><kbd>Enter</kbd> enviar · <kbd>Shift</kbd>+<kbd>Enter</kbd> nova linha</span>
+                    <button class="send-button" id="sendButton" type="submit" aria-label="Enviar mensagem"><i class="ph-duotone ph-arrow-up"></i></button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </section>
+
+          <section class="content-view hidden" data-content-view="editor">
+            <div class="editor-header">
+              <div><i class="ph-duotone ph-file-ts"></i><span>src/app.ts</span><small>somente visualização no MVP</small></div>
+              <button class="button compact secondary" disabled>Salvar</button>
+            </div>
+            <div class="code-editor" aria-label="Prévia do editor">
+              <ol>
+                <li><span class="keyword">import</span> { JarvisClient } <span class="keyword">from</span> <span class="string">'./core/client'</span>;</li>
+                <li></li>
+                <li><span class="keyword">const</span> jarvis = <span class="keyword">new</span> JarvisClient({</li>
+                <li>&nbsp;&nbsp;model: <span class="string">'gpt-oss:120b-cloud'</span>,</li>
+                <li>&nbsp;&nbsp;tools: <span class="literal">false</span>,</li>
+                <li>&nbsp;&nbsp;rag: <span class="literal">false</span>,</li>
+                <li>});</li>
+                <li></li>
+                <li><span class="comment">// Editor real entra na próxima etapa.</span></li>
+                <li><span class="keyword">export default</span> jarvis;</li>
+              </ol>
+            </div>
+          </section>
+
+          <section class="content-view hidden" data-content-view="diff">
+            <div class="diff-toolbar">
+              <div><strong>3 alterações</strong><span>prévia visual</span></div>
+              <div><button class="button compact secondary" disabled>Descartar</button><button class="button compact primary" disabled>Aceitar</button></div>
+            </div>
+            <div class="diff-empty">
+              <i class="ph-duotone ph-git-diff"></i>
+              <h2>Nenhuma alteração produzida pelo chat</h2>
+              <p>A edição de arquivos será conectada quando as tools forem adicionadas. O componente de diff já está preparado.</p>
+            </div>
+          </section>
+
+          <section class="bottom-panel" id="bottomPanel">
+            <div class="bottom-resizer"></div>
+            <div class="bottom-tabs">
+              <button class="bottom-tab active" data-bottom="terminal">Terminal</button>
+              <button class="bottom-tab" data-bottom="problems">Problemas <span>0</span></button>
+              <button class="bottom-tab" data-bottom="logs">Logs</button>
+              <span class="tabs-spacer"></span>
+              <button class="panel-icon" data-action="toggle-bottom"><i class="ph-duotone ph-caret-down"></i></button>
+            </div>
+            <div class="terminal-output" data-bottom-view="terminal">
+              <p><span class="prompt-project">jarvis</span> <span class="muted">on</span> <span class="prompt-branch">main</span> <span class="prompt-symbol">❯</span> <span class="muted">terminal indisponível no MVP</span></p>
+              <p class="terminal-note">O backend atual aceita somente conversas com o modelo.</p>
+            </div>
+            <div class="bottom-copy hidden" data-bottom-view="problems">Nenhum problema registrado.</div>
+            <div class="bottom-copy hidden" data-bottom-view="logs" id="logOutput">Aguardando eventos do aplicativo…</div>
+          </section>
+        </section>
+
+        <aside class="inspector" id="inspector">
+          <div class="panel-heading">
+            <span>Contexto da sessão</span>
+            <button class="panel-icon" data-action="toggle-inspector" title="Recolher painel"><i class="ph-duotone ph-caret-line-right"></i></button>
+          </div>
+          <div class="inspector-scroll">
+            <section class="inspector-section">
+              <p class="eyebrow">Estado</p>
+              <div class="session-state">
+                <span class="state-icon"><i class="ph-duotone ph-chat-circle-dots"></i></span>
+                <div><strong>Chat simples</strong><small>Sem acesso ao workspace</small></div>
+              </div>
+            </section>
+            <section class="inspector-section">
+              <p class="eyebrow">Capacidades</p>
+              <ul class="capability-list">
+                <li class="available"><i class="ph-duotone ph-check-circle"></i><span>Conversação<small>Ollama local ou Cloud</small></span></li>
+                <li><i class="ph-duotone ph-lock"></i><span>Arquivos<small>Próxima etapa</small></span></li>
+                <li><i class="ph-duotone ph-lock"></i><span>Terminal<small>Próxima etapa</small></span></li>
+                <li><i class="ph-duotone ph-lock"></i><span>RAG e skills<small>Fora do MVP</small></span></li>
+              </ul>
+            </section>
+            <section class="inspector-section">
+              <p class="eyebrow">Conversa</p>
+              <dl class="compact-stats">
+                <div><dt>Mensagens</dt><dd id="messageCount">1</dd></div>
+                <div><dt>Modelo</dt><dd id="inspectorModel">GPT-OSS</dd></div>
+                <div><dt>Persistência</dt><dd>local</dd></div>
+              </dl>
+            </section>
+          </div>
+        </aside>
+      </main>
+
+      <div class="toast-region" id="toastRegion" aria-live="polite"></div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
