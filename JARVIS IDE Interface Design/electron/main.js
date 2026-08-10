@@ -69,6 +69,66 @@ function registerIpc() {
     const response = await fetch(`${backend.url}/health`);
     return response.json();
   });
+  ipcMain.handle('rag:health', async () => {
+    const response = await fetch(`${backend.url}/api/rag/health`);
+    return response.json();
+  });
+  ipcMain.handle('rag:index-project', async (_event, payload) => {
+    const response = await fetch(`${backend.url}/api/rag/index`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao indexar o projeto.');
+    return data;
+  });
+  ipcMain.handle('rag:search', async (_event, payload) => {
+    const response = await fetch(`${backend.url}/api/rag/search`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao pesquisar no RAG.');
+    return data;
+  });
+  ipcMain.handle('rag:save-note', async (_event, payload) => {
+    const response = await fetch(`${backend.url}/api/rag/notes`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao salvar a nota.');
+    return data;
+  });
+  ipcMain.handle('memory:list', async (_event, payload) => {
+    const response = await fetch(`${backend.url}/api/memory/list`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao listar memórias.');
+    return data;
+  });
+  ipcMain.handle('memory:save', async (_event, payload) => {
+    const response = await fetch(`${backend.url}/api/memory`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao salvar a memória.');
+    return data;
+  });
+  ipcMain.handle('skills:list', async () => {
+    const response = await fetch(`${backend.url}/api/skills`);
+    return response.json();
+  });
+  ipcMain.handle('tools:list', async () => {
+    const response = await fetch(`${backend.url}/api/tools`);
+    return response.json();
+  });
+  ipcMain.handle('tools:approve', async (_event, payload) => {
+    const response = await fetch(`${backend.url}/api/tools/approval`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao resolver a aprovação.');
+    return data;
+  });
   ipcMain.handle('backend:chat', async (_event, payload) => {
     const response = await fetch(`${backend.url}/api/chat`, {
       method: 'POST',

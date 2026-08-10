@@ -40,9 +40,9 @@
             <span id="activeModelLabel">GPT-OSS 120B</span>
             <i class="ph-duotone ph-caret-down subtle"></i>
           </button>
-          <button class="top-pill" title="Perfil do MVP">
+          <button class="top-pill" title="Perfil do agente">
             <i class="ph-duotone ph-chat-circle-dots"></i>
-            <span>Chat simples</span>
+            <span>Agente local</span>
           </button>
           <button class="connection-pill" id="connectionStatus" title="Estado do backend">
             <span class="status-dot checking"></span>
@@ -101,7 +101,7 @@
             <p class="eyebrow">Ambiente</p>
             <dl class="environment-list">
               <div><dt>Modelo</dt><dd>GPT-OSS 120B</dd></div>
-              <div><dt>Modo</dt><dd>Chat simples</dd></div>
+              <div><dt>Modo</dt><dd>Agente + RAG</dd></div>
               <div><dt>Interface</dt><dd>Electron</dd></div>
               <div><dt>Backend</dt><dd id="welcomeBackend">verificando</dd></div>
             </dl>
@@ -109,8 +109,8 @@
           <div class="mvp-note">
             <span class="mvp-index">01</span>
             <p class="eyebrow">Escopo atual</p>
-            <h2>Conversa primeiro.</h2>
-            <p>Este MVP conecta a interface ao Ollama. Terminal, RAG, skills e edição assistida aparecem como prévias visuais e serão ativados nas próximas etapas.</p>
+            <h2>Contexto que acompanha.</h2>
+            <p>O JARVIS conecta Ollama Cloud ao seu projeto, recupera conhecimento pelo RAG e mantém memórias explícitas entre conversas.</p>
           </div>
         </aside>
       </main>
@@ -155,11 +155,11 @@
                   <div class="avatar assistant-avatar"><i class="ph-duotone ph-sparkle"></i></div>
                   <div class="message-content">
                     <div class="message-meta"><strong>JARVIS</strong><span>agora</span></div>
-                    <p>Olá. O frontend está conectado ao backend mínimo de chat. Neste estágio eu converso com você usando o modelo configurado no Ollama, sem acessar arquivos, terminal, RAG ou skills.</p>
+                    <p>Olá. Posso conversar, recuperar contexto do projeto, consultar memórias e usar tools com limites de segurança e aprovação.</p>
                     <div class="scope-tags">
                       <span><i class="ph-duotone ph-check-circle"></i>Chat</span>
-                      <span class="inactive"><i class="ph-duotone ph-lock"></i>Tools desativadas</span>
-                      <span class="inactive"><i class="ph-duotone ph-lock"></i>RAG desativado</span>
+                      <span><i class="ph-duotone ph-check-circle"></i>Tools protegidas</span>
+                      <span><i class="ph-duotone ph-check-circle"></i>RAG ativo</span>
                     </div>
                   </div>
                 </article>
@@ -185,7 +185,7 @@
 
           <section class="content-view hidden" data-content-view="editor">
             <div class="editor-header">
-              <div><i class="ph-duotone ph-file-ts"></i><span>src/app.ts</span><small>somente visualização no MVP</small></div>
+              <div><i class="ph-duotone ph-file-ts"></i><span>src/app.ts</span><small>leitura disponível para tools</small></div>
               <button class="button compact secondary" disabled>Salvar</button>
             </div>
             <div class="code-editor" aria-label="Prévia do editor">
@@ -226,8 +226,8 @@
               <button class="panel-icon" data-action="toggle-bottom"><i class="ph-duotone ph-caret-down"></i></button>
             </div>
             <div class="terminal-output" data-bottom-view="terminal">
-              <p><span class="prompt-project">jarvis</span> <span class="muted">on</span> <span class="prompt-branch">main</span> <span class="prompt-symbol">❯</span> <span class="muted">terminal indisponível no MVP</span></p>
-              <p class="terminal-note">O backend atual aceita somente conversas com o modelo.</p>
+              <p><span class="prompt-project">jarvis</span> <span class="muted">on</span> <span class="prompt-branch">main</span> <span class="prompt-symbol">❯</span> <span class="muted">terminal mediado pelo agente</span></p>
+              <p class="terminal-note">Comandos solicitados pela IA só executam depois da sua aprovação.</p>
             </div>
             <div class="bottom-copy hidden" data-bottom-view="problems">Nenhum problema registrado.</div>
             <div class="bottom-copy hidden" data-bottom-view="logs" id="logOutput">Aguardando eventos do aplicativo…</div>
@@ -244,16 +244,16 @@
               <p class="eyebrow">Estado</p>
               <div class="session-state">
                 <span class="state-icon"><i class="ph-duotone ph-chat-circle-dots"></i></span>
-                <div><strong>Chat simples</strong><small>Sem acesso ao workspace</small></div>
+                <div><strong>Agente protegido</strong><small>Escopo limitado ao workspace</small></div>
               </div>
             </section>
             <section class="inspector-section">
               <p class="eyebrow">Capacidades</p>
               <ul class="capability-list">
                 <li class="available"><i class="ph-duotone ph-check-circle"></i><span>Conversação<small>Ollama local ou Cloud</small></span></li>
-                <li><i class="ph-duotone ph-lock"></i><span>Arquivos<small>Próxima etapa</small></span></li>
-                <li><i class="ph-duotone ph-lock"></i><span>Terminal<small>Próxima etapa</small></span></li>
-                <li><i class="ph-duotone ph-lock"></i><span>RAG e skills<small>Fora do MVP</small></span></li>
+                <li class="available"><i class="ph-duotone ph-check-circle"></i><span>Arquivos<small>Leitura confinada ao projeto</small></span></li>
+                <li class="available"><i class="ph-duotone ph-shield-check"></i><span>Terminal<small>Sempre exige aprovação</small></span></li>
+                <li class="available"><i class="ph-duotone ph-check-circle"></i><span>RAG, memória e skills<small>Ativos por projeto</small></span></li>
               </ul>
             </section>
             <section class="inspector-section">

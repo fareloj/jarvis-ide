@@ -16,6 +16,23 @@ contextBridge.exposeInMainWorld('jarvis', {
   project: {
     open: () => ipcRenderer.invoke('project:open'),
   },
+  rag: {
+    health: () => ipcRenderer.invoke('rag:health'),
+    indexProject: (payload) => ipcRenderer.invoke('rag:index-project', payload),
+    search: (payload) => ipcRenderer.invoke('rag:search', payload),
+    saveNote: (payload) => ipcRenderer.invoke('rag:save-note', payload),
+  },
+  memory: {
+    list: (payload) => ipcRenderer.invoke('memory:list', payload),
+    save: (payload) => ipcRenderer.invoke('memory:save', payload),
+  },
+  skills: {
+    list: () => ipcRenderer.invoke('skills:list'),
+  },
+  tools: {
+    list: () => ipcRenderer.invoke('tools:list'),
+    approve: (payload) => ipcRenderer.invoke('tools:approve', payload),
+  },
   backend: {
     health: () => ipcRenderer.invoke('backend:health'),
     chat: (payload) => ipcRenderer.invoke('backend:chat', payload),

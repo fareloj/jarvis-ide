@@ -1,0 +1,17 @@
+services:
+  ollama:
+    gpus: all
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    ports: !override
+      - "${JARVIS_RAG_OLLAMA_PORT:-11435}:11434"
+
+  reranker-python:
+    environment:
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+
+  orchestrator-python:
+    volumes:
+      - "${JARVIS_RAG_STAGING_PATH}:/jarvis-workspace:ro"

@@ -1,12 +1,14 @@
 # JARVIS IDE
 
-MVP desktop em Electron para o JARVIS, com interface completa de navegação e um backend mínimo de chatbot conectado ao Ollama. As respostas chegam por streaming, podem ser interrompidas e suportam Markdown GFM, tabelas, código inline e blocos de código com cópia. RAG, terminal, edição por agente e skills permanecem desativados nesta fase.
+MVP desktop em Electron para o JARVIS, com Ollama Cloud para conversa e um Hybrid RAG Engine local acelerado por GPU. As respostas chegam por streaming e suportam Markdown GFM; conversas, memórias e notas persistem localmente. O agente pode pesquisar o RAG, ler arquivos confinados ao projeto e usar skills declarativas. Escrita de memória e terminal exigem aprovação explícita na interface.
 
 ## Requisitos
 
 - Node.js 20 ou superior
 - Ollama instalado
 - Uma sessão válida do Ollama Cloud, caso use um modelo `-cloud`
+- Docker Desktop com suporte NVIDIA para embeddings e reranking locais
+- O repositório `hybrid-rag-engine` disponível (o ambiente atual usa `D:\gpt`)
 
 ## Executar
 
@@ -19,6 +21,15 @@ npm start
 ```
 
 O modo padrão usa o Ollama em `http://127.0.0.1:11434` como gateway para o modelo Cloud.
+
+Para iniciar o RAG usando o Compose do engine e o override do JARVIS:
+
+```powershell
+$env:JARVIS_RAG_STAGING_PATH=(Resolve-Path '.\data\rag-workspace').Path
+docker compose -f 'D:\gpt\docker-compose.yml' -f '.\docker\rag.compose.override.yml' up -d
+```
+
+O override publica o Ollama de embeddings em `11435`, monta apenas o staging de arquivos como leitura e ativa GPU no embedder e no reranker. O chatbot continua usando `11434`.
 
 Para chamar o Ollama Cloud diretamente, altere `.env`:
 
@@ -39,7 +50,9 @@ npm test
 
 ```text
 backend/   servidor HTTP local e ponte para Ollama
+docker/    override seguro do Hybrid RAG Engine
 electron/  janela desktop, preload seguro e IPC
+skills/    skills declarativas carregadas pelo runtime
 src/       interface, estilos e comportamento do frontend
 _ds/       design system original exportado do Claude Design
 docs/      decisões e referências da arquitetura agentic
@@ -47,4 +60,4 @@ docs/      decisões e referências da arquitetura agentic
 
 As credenciais nunca são expostas ao renderer do Electron. O frontend conversa com o backend através do preload isolado.
 
-O desenho planejado para tools, skills, terminal e RAG está em [docs/AGENT_ARCHITECTURE.md](docs/AGENT_ARCHITECTURE.md).
+Os contratos de tools, skills, aprovação, memória e RAG estão em [docs/AGENT_ARCHITECTURE.md](docs/AGENT_ARCHITECTURE.md).

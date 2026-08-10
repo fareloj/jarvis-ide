@@ -1,6 +1,6 @@
 # Arquitetura agentic do JARVIS
 
-Este documento registra referências e decisões para as próximas fases do JARVIS. O MVP atual continua sendo apenas um chatbot; terminal, RAG, tools e skills permanecem desativados até que seus contratos e limites de segurança existam.
+Este documento registra referências, decisões e o contrato implementado no JARVIS. O runtime já integra RAG, memória persistente, tools e skills; escrita e execução continuam bloqueadas até aprovação explícita.
 
 ## Referências estudadas
 
@@ -102,15 +102,16 @@ Uma tool deve declarar ao menos:
 - Cancelamento deve encerrar a chamada do modelo e, futuramente, a árvore do processo executado.
 - Cada tool call registra parâmetros saneados, decisão de política, duração e resultado.
 
-## Sequência de implementação
+## Estado da implementação
 
-1. Chat com streaming, cancelamento, IDs de execução e reconexão.
-2. Sessões persistentes e protocolo de eventos independente do renderer.
-3. Registro de tools somente leitura (`project.list`, `project.read`, `search`).
-4. Aprovação e auditoria antes de qualquer escrita ou terminal.
-5. Terminal isolado e adaptadores de CLI.
-6. Integração do Hybrid RAG Engine por adapter, sem acoplá-lo ao loop do agente.
-7. Loader de skills com escopo, precedência e carregamento progressivo.
+1. Chat com streaming, cancelamento, IDs de execução e reconexão: implementado.
+2. Sessões locais persistentes e protocolo de eventos independente do renderer: implementado.
+3. Adapter do Hybrid RAG Engine, staging seguro, busca e recuperação no chat: implementado.
+4. Memória explícita por projeto, independente do histórico: implementado.
+5. Registro de tools de RAG, filesystem, memória e terminal: implementado.
+6. Aprovação obrigatória para escrita de memória e execução de terminal: implementado.
+7. Loader de skills declarativas com ativação pela interface: implementado.
+8. Adaptadores dedicados para Codex CLI, Claude Code e Antigravity CLI: próximos incrementos.
 
 ## Decisões que ficam adiadas
 

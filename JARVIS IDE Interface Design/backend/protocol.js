@@ -1,6 +1,9 @@
 const EVENT_TYPES = Object.freeze({
   MESSAGE_DELTA: 'message.delta',
   MESSAGE_DONE: 'message.done',
+  TOOL_REQUESTED: 'tool.requested',
+  TOOL_RESULT: 'tool.result',
+  APPROVAL_REQUIRED: 'approval.required',
   RUN_FAILED: 'run.failed',
   RUN_CANCELLED: 'run.cancelled',
 });
