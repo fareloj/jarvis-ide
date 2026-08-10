@@ -105,11 +105,14 @@ test('health e chat preservam o contrato do frontend', async (context) => {
     method: 'POST',
     body: {
       model: 'gpt-oss:120b-cloud',
+      runId: 'run-test-1',
       messages: [{ role: 'user', content: 'Olá, JARVIS' }],
     },
   });
   assert.equal(streamed.status, 200);
   const events = streamed.body.trim().split('\n').map((line) => JSON.parse(line));
-  assert.deepEqual(events.map((event) => event.type), ['chunk', 'chunk', 'done']);
-  assert.equal(events.map((event) => event.content || '').join(''), 'Olá! **Tudo bem?**');
+  assert.deepEqual(events.map((event) => event.type), ['message.delta', 'message.delta', 'message.done']);
+  assert.ok(events.every((event) => event.runId === 'run-test-1'));
+  assert.ok(events.every((event) => !Number.isNaN(Date.parse(event.timestamp))));
+  assert.equal(events.map((event) => event.payload.content || '').join(''), 'Olá! **Tudo bem?**');
 });

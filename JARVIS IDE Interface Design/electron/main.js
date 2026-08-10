@@ -1,6 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const { EVENT_TYPES, createRunEvent } = require('../backend/protocol');
 
 let mainWindow;
 let backend;
@@ -86,7 +87,7 @@ function registerIpc() {
 
     const emit = (streamEvent) => {
       if (!event.sender.isDestroyed()) {
-        event.sender.send('backend:chat-event', { requestId, event: streamEvent });
+        event.sender.send('backend:chat-event', streamEvent);
       }
     };
 
@@ -94,7 +95,7 @@ function registerIpc() {
       const response = await fetch(`${backend.url}/api/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload || {}),
+        body: JSON.stringify({ ...(payload || {}), runId: requestId }),
         signal: abortController.signal,
       });
 
@@ -115,8 +116,10 @@ function registerIpc() {
       }
       if (pending.trim()) emit(JSON.parse(pending));
     } catch (error) {
-      if (error?.name === 'AbortError') emit({ type: 'cancelled' });
-      else emit({ type: 'error', error: error?.message || 'Falha inesperada no streaming.' });
+      if (error?.name === 'AbortError') emit(createRunEvent(requestId, EVENT_TYPES.RUN_CANCELLED));
+      else emit(createRunEvent(requestId, EVENT_TYPES.RUN_FAILED, {
+        error: error?.message || 'Falha inesperada no streaming.',
+      }));
     } finally {
       activeChatRequests.delete(requestId);
     }

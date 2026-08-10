@@ -2,6 +2,12 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
 const bridge = window.jarvis;
+const defaultProject = { name: 'orion-api', path: '~/dev/orion-api' };
+const defaultModel = localStorage.getItem('jarvis:model') || 'gpt-oss:120b-cloud';
+const sessionStore = window.JarvisSessionStore.createSessionStore(localStorage);
+sessionStore.migrateLegacy({ fallbackProject: defaultProject, fallbackModel: defaultModel });
+const initialSession = sessionStore.getActive()
+  || sessionStore.create({ project: defaultProject, model: defaultModel });
 
 const state = {
   nav: 'chat',
@@ -10,12 +16,10 @@ const state = {
   inspectorOpen: true,
   busy: false,
   activeRequestId: null,
-  model: localStorage.getItem('jarvis:model') || 'gpt-oss:120b-cloud',
-  messages: JSON.parse(localStorage.getItem('jarvis:messages') || '[]'),
-  project: JSON.parse(localStorage.getItem('jarvis:project') || 'null') || {
-    name: 'orion-api',
-    path: '~/dev/orion-api',
-  },
+  sessionId: initialSession.id,
+  model: initialSession.model,
+  messages: initialSession.messages,
+  project: initialSession.project,
 };
 
 const elements = {
@@ -45,17 +49,27 @@ const elements = {
 };
 
 const sidebarTemplates = {
-  chat: () => `
+  chat: () => {
+    const recent = sessionStore.list({ projectPath: state.project.path }).slice(0, 6);
+    return `
     <div class="sidebar-search"><i class="ph-duotone ph-magnifying-glass"></i><span>Buscar conversas…</span></div>
     <div class="sidebar-section">
-      <button class="sidebar-link active" data-action="new-chat"><i class="ph-duotone ph-chat-circle-dots"></i>Conversa atual</button>
+      <button class="sidebar-link" data-action="new-chat"><i class="ph-duotone ph-plus-circle"></i>Nova conversa</button>
       <button class="sidebar-link" data-nav="history"><i class="ph-duotone ph-clock-counter-clockwise"></i>Histórico local</button>
+    </div>
+    <div class="sidebar-section session-list">
+      <p class="eyebrow" style="margin:4px 8px 8px">Recentes</p>
+      ${recent.map((session) => `
+        <button class="sidebar-link session-link ${session.id === state.sessionId ? 'active' : ''}" data-session-id="${escapeHtml(session.id)}">
+          <i class="ph-duotone ph-chat-circle"></i><span>${escapeHtml(session.title)}</span>
+        </button>`).join('')}
     </div>
     <div class="sidebar-section">
       <p class="eyebrow" style="margin:4px 8px 8px">Sessão</p>
       <button class="sidebar-link"><i class="ph-duotone ph-brain"></i>${shortModel(state.model)}</button>
       <button class="sidebar-link"><i class="ph-duotone ph-shield-check"></i>Somente conversa</button>
-    </div>`,
+    </div>`;
+  },
   files: () => `
     <div class="sidebar-search"><i class="ph-duotone ph-magnifying-glass"></i><span>Buscar arquivos…</span></div>
     <div class="file-tree">
@@ -125,6 +139,13 @@ function timeLabel(date = new Date()) {
   return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
+function dateLabel(value) {
+  const date = new Date(value);
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) return `Hoje, ${timeLabel(date)}`;
+  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+}
+
 function renderMarkdown(container, content) {
   if (!window.marked || !window.DOMPurify) {
     const paragraph = document.createElement('p');
@@ -182,7 +203,13 @@ async function copyText(text) {
 }
 
 function persist() {
-  localStorage.setItem('jarvis:messages', JSON.stringify(state.messages.slice(-40)));
+  sessionStore.save({
+    ...(sessionStore.get(state.sessionId) || {}),
+    id: state.sessionId,
+    model: state.model,
+    messages: state.messages,
+    project: state.project,
+  });
   localStorage.setItem('jarvis:model', state.model);
   localStorage.setItem('jarvis:project', JSON.stringify(state.project));
 }
@@ -264,11 +291,19 @@ function specialPage(type) {
       <p class="page-intro">A interface do RAG está reservada, mas nenhuma indexação ou recuperação é executada neste MVP.</p>
       <div class="placeholder-card"><i class="ph-duotone ph-database"></i><h2>RAG entra na próxima fase</h2><p>Quando ativado, este espaço mostrará corpora, progresso de indexação, saúde do índice e resultados de busca híbrida.</p></div>`;
   } else {
-    const count = state.messages.length;
+    const sessions = sessionStore.list({ includeArchived: true });
     page.innerHTML = `
       <h1>Histórico local</h1>
-      <p class="page-intro">Conversas armazenadas somente no perfil local do Electron.</p>
-      <div class="placeholder-card magenta"><i class="ph-duotone ph-clock-counter-clockwise"></i><h2>${count ? `${count} mensagens nesta sessão` : 'Nenhuma conversa salva'}</h2><p>${count ? 'Volte ao chat para continuar de onde parou ou inicie uma nova conversa.' : 'Sua primeira conversa aparecerá aqui automaticamente.'}</p></div>`;
+      <p class="page-intro">Arquivo de conversas deste dispositivo. Isto não é memória do agente e não entra automaticamente em outros chats.</p>
+      <div class="history-list">
+        ${sessions.length ? sessions.map((session) => `
+          <button class="history-card ${session.id === state.sessionId ? 'active' : ''}" data-session-id="${escapeHtml(session.id)}">
+            <span class="history-icon"><i class="ph-duotone ph-chat-circle-text"></i></span>
+            <span class="history-copy"><strong>${escapeHtml(session.title)}</strong><small>${escapeHtml(session.project?.name || 'Projeto')} · ${session.messages.length} mensagens</small></span>
+            <span class="history-date">${dateLabel(session.updatedAt)}</span>
+          </button>`).join('') : `
+          <div class="placeholder-card magenta"><i class="ph-duotone ph-clock-counter-clockwise"></i><h2>Nenhuma conversa salva</h2><p>Sua primeira conversa aparecerá aqui automaticamente.</p></div>`}
+      </div>`;
   }
   return page;
 }
@@ -362,7 +397,11 @@ async function cancelActiveChat() {
 }
 
 function renderSavedMessages() {
+  $$('.message', elements.chatFeed).forEach((message) => {
+    if (!message.classList.contains('welcome-message')) message.remove();
+  });
   for (const message of state.messages) appendMessage(message.role, message.content, { time: message.time });
+  elements.messageCount.textContent = String(1 + state.messages.length);
 }
 
 function sendMessage(text) {
@@ -421,11 +460,12 @@ function finishChatRequest(requestId) {
   elements.chatInput.focus();
 }
 
-function handleChatEvent({ requestId, event } = {}) {
-  if (!requestId || requestId !== state.activeRequestId || !event) return;
+function handleChatEvent(event = {}) {
+  const requestId = event.runId;
+  if (!requestId || requestId !== state.activeRequestId) return;
   let message = $(`.message[data-request-id="${requestId}"]`, elements.chatFeed);
 
-  if (event.type === 'chunk') {
+  if (event.type === 'message.delta') {
     if (message?.classList.contains('typing-message')) {
       message.remove();
       message = appendMessage('assistant', '', { time: timeLabel() });
@@ -433,13 +473,13 @@ function handleChatEvent({ requestId, event } = {}) {
       message.dataset.content = '';
       message.classList.add('streaming-message');
     }
-    message.dataset.content += event.content || '';
+    message.dataset.content += event.payload?.content || '';
     renderMarkdown($('.markdown-body', message), message.dataset.content);
     elements.chatScroll.scrollTop = elements.chatScroll.scrollHeight;
     return;
   }
 
-  if (event.type === 'done') {
+  if (event.type === 'message.done') {
     const content = message?.dataset.content || 'O modelo não retornou conteúdo.';
     if (message?.classList.contains('typing-message')) {
       message.remove();
@@ -447,17 +487,17 @@ function handleChatEvent({ requestId, event } = {}) {
     }
     message?.classList.remove('streaming-message');
     state.messages.push({ role: 'assistant', content, time: timeLabel() });
-    log(`chat · resposta recebida de ${event.model || state.model}`);
+    log(`chat · resposta recebida de ${event.payload?.model || state.model}`);
     finishChatRequest(requestId);
     return;
   }
 
   message?.remove();
-  if (event.type === 'cancelled') {
+  if (event.type === 'run.cancelled') {
     appendMessage('assistant', 'Geração interrompida.', { error: true });
     log('chat · geração interrompida');
   } else {
-    const detail = event.error || 'Falha inesperada no streaming.';
+    const detail = event.payload?.error || 'Falha inesperada no streaming.';
     appendMessage('assistant', `Não consegui conversar com o modelo: ${detail}`, { error: true });
     log(`erro · ${detail}`);
     toast('Falha no chatbot', detail, 'error');
@@ -470,15 +510,33 @@ function newChat() {
   if (requestId) bridge?.backend?.cancelChat?.(requestId);
   state.activeRequestId = null;
   setChatBusy(false);
+  const session = sessionStore.create({ project: state.project, model: state.model });
+  state.sessionId = session.id;
   state.messages = [];
-  persist();
-  $$('.message', elements.chatFeed).forEach((message) => {
-    if (!message.classList.contains('welcome-message')) message.remove();
-  });
-  elements.messageCount.textContent = '1';
+  renderSavedMessages();
   renderSidebar();
   enterWorkspace();
-  toast('Nova conversa', 'O histórico da sessão anterior foi removido.');
+  toast('Nova conversa', 'A conversa anterior continua disponível no histórico local.');
+}
+
+function openSession(sessionId) {
+  if (state.busy) {
+    toast('Resposta em andamento', 'Interrompa a geração antes de trocar de conversa.', 'error');
+    return;
+  }
+  const session = sessionStore.setActive(sessionId);
+  if (!session) return;
+  state.sessionId = session.id;
+  state.messages = session.messages;
+  state.model = session.model;
+  state.project = session.project;
+  elements.projectName.textContent = state.project.name;
+  elements.modelLabel.textContent = shortModel(state.model);
+  elements.inspectorModel.textContent = shortModel(state.model).replace(' 120B', '').replace(' 480B', '');
+  renderSavedMessages();
+  renderSidebar();
+  enterWorkspace();
+  toast('Conversa reaberta', session.title);
 }
 
 function resizeComposer() {
@@ -586,6 +644,10 @@ document.addEventListener('click', async (event) => {
     return;
   }
   if (target.dataset.view) switchView(target.dataset.view);
+  if (target.dataset.sessionId) {
+    openSession(target.dataset.sessionId);
+    return;
+  }
 
   const action = target.dataset.action;
   if (action === 'home') showWelcome();

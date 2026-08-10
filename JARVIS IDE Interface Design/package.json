@@ -7,8 +7,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
-    "check": "node --check electron/main.js && node --check electron/preload.js && node --check backend/server.js && node --check src/app.js",
-    "test": "node --test backend/server.test.js src/markdown.test.js"
+    "check": "node --check electron/main.js && node --check electron/preload.js && node --check backend/protocol.js && node --check backend/server.js && node --check src/session-store.js && node --check src/app.js",
+    "test": "node --test backend/protocol.test.js backend/server.test.js src/markdown.test.js src/session-store.test.js"
   },
   "dependencies": {
     "@phosphor-icons/web": "^2.1.2",

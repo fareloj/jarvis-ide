@@ -1,4 +1,5 @@
 const http = require('node:http');
+const { EVENT_TYPES, createRunEvent } = require('./protocol');
 
 const DEFAULT_MODEL = process.env.JARVIS_OLLAMA_MODEL || 'gpt-oss:120b-cloud';
 const OLLAMA_HOST = (process.env.JARVIS_OLLAMA_HOST || 'http://127.0.0.1:11434').replace(/\/$/, '');
@@ -94,7 +95,7 @@ async function chat(messages, model = DEFAULT_MODEL) {
   };
 }
 
-async function streamChat(messages, model, clientResponse, abortController) {
+async function streamChat(messages, model, runId, clientResponse, abortController) {
   const normalized = normalizeMessages(messages);
   const upstream = await fetch(`${OLLAMA_HOST}/api/chat`, {
     method: 'POST',
@@ -122,11 +123,16 @@ async function streamChat(messages, model, clientResponse, abortController) {
     const payload = JSON.parse(line);
     const content = payload.message?.content || '';
     if (content) {
-      clientResponse.write(`${JSON.stringify({ type: 'chunk', content, model: payload.model || model })}\n`);
+      clientResponse.write(`${JSON.stringify(createRunEvent(runId, EVENT_TYPES.MESSAGE_DELTA, {
+        content,
+        model: payload.model || model,
+      }))}\n`);
     }
     if (payload.done && !doneSent) {
       doneSent = true;
-      clientResponse.write(`${JSON.stringify({ type: 'done', model: payload.model || model })}\n`);
+      clientResponse.write(`${JSON.stringify(createRunEvent(runId, EVENT_TYPES.MESSAGE_DONE, {
+        model: payload.model || model,
+      }))}\n`);
     }
   };
 
@@ -138,12 +144,17 @@ async function streamChat(messages, model, clientResponse, abortController) {
   }
   pending += decoder.decode();
   relay(pending);
-  if (!doneSent) clientResponse.write(`${JSON.stringify({ type: 'done', model: model || DEFAULT_MODEL })}\n`);
+  if (!doneSent) {
+    clientResponse.write(`${JSON.stringify(createRunEvent(runId, EVENT_TYPES.MESSAGE_DONE, {
+      model: model || DEFAULT_MODEL,
+    }))}\n`);
+  }
   clientResponse.end();
 }
 
 function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', port = 0 } = {}) {
   const server = http.createServer(async (request, response) => {
+    let runId = null;
     if (request.method === 'OPTIONS') {
       response.writeHead(204, {
         'Access-Control-Allow-Origin': 'null',
@@ -168,11 +179,13 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
 
       if (request.method === 'POST' && request.url === '/api/chat/stream') {
         const body = await readJson(request);
+        runId = typeof body.runId === 'string' && body.runId ? body.runId : null;
+        if (!runId) throw new Error('runId é obrigatório para streaming.');
         const abortController = new AbortController();
         response.once('close', () => {
           if (!response.writableEnded) abortController.abort();
         });
-        await streamChat(body.messages, body.model || DEFAULT_MODEL, response, abortController);
+        await streamChat(body.messages, body.model || DEFAULT_MODEL, runId, response, abortController);
         return;
       }
 
@@ -182,7 +195,9 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
         ? 'O modelo excedeu o tempo limite da requisição.'
         : error?.message || 'Falha inesperada no backend.';
       if (!response.headersSent) sendJson(response, 502, { error: message });
-      else if (!response.writableEnded) response.end(`${JSON.stringify({ type: 'error', error: message })}\n`);
+      else if (!response.writableEnded && runId) {
+        response.end(`${JSON.stringify(createRunEvent(runId, EVENT_TYPES.RUN_FAILED, { error: message }))}\n`);
+      }
     }
   });
 

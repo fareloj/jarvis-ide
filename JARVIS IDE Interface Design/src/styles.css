@@ -270,6 +270,7 @@ kbd { padding: 1px 4px; border: 1px solid var(--line); border-bottom-width: 2px;
 .sidebar-link:hover, .sidebar-link.active { background: var(--surface); }
 .sidebar-link.active { color: var(--cyan-deep); background: var(--cyan-soft); font-weight: 600; }
 .sidebar-link i { color: var(--ink-4); font-size: 15px; }
+.session-link span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .workbench { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-radius: 10px; background: var(--paper); box-shadow: var(--shadow-sm); }
 .editor-tabs { height: 37px; flex: 0 0 37px; display: flex; align-items: stretch; padding: 0 7px; border-bottom: 1px solid var(--line-soft); background: var(--surface-muted); }
@@ -455,6 +456,16 @@ kbd { padding: 1px 4px; border: 1px solid var(--line); border-bottom-width: 2px;
 .placeholder-card.magenta i { color: var(--magenta); }
 .placeholder-card h2 { margin: 10px 0 6px; font: 600 20px var(--font-editorial); }
 .placeholder-card p { margin: 0; color: var(--ink-3); line-height: 1.6; }
+.history-list { width: min(760px, 100%); display: flex; flex-direction: column; gap: 8px; }
+.history-card { width: 100%; padding: 14px 15px; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 12px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--paper-raised); color: var(--ink); text-align: left; cursor: pointer; }
+.history-card:hover, .history-card.active { border-color: var(--cyan); background: var(--cyan-pale); }
+.history-icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 7px; background: var(--surface); color: var(--cyan-dark); }
+.history-icon i { font-size: 17px; }
+.history-copy { min-width: 0; }
+.history-copy strong, .history-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-copy strong { font-size: 12.5px; }
+.history-copy small { margin-top: 4px; color: var(--ink-5); font-size: 10px; }
+.history-date { color: var(--ink-4); font: 10px var(--font-mono); }
 
 .toast-region { position: fixed; right: 18px; bottom: 18px; z-index: 50; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
 .toast { min-width: 280px; max-width: 410px; padding: 11px 13px; display: flex; align-items: flex-start; gap: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper-raised); box-shadow: var(--shadow-md); animation: toast-in 180ms ease; }
