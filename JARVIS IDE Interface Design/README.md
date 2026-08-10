@@ -1,6 +1,6 @@
 # JARVIS IDE
 
-MVP desktop em Electron para o JARVIS, com interface completa de navegação e um backend mínimo de chatbot conectado ao Ollama. RAG, terminal, edição por agente e skills permanecem desativados nesta fase.
+MVP desktop em Electron para o JARVIS, com interface completa de navegação e um backend mínimo de chatbot conectado ao Ollama. As respostas suportam Markdown GFM, tabelas, código inline e blocos de código com cópia. RAG, terminal, edição por agente e skills permanecem desativados nesta fase.
 
 ## Requisitos
 

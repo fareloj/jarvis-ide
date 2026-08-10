@@ -124,6 +124,62 @@ function timeLabel(date = new Date()) {
   return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
+function renderMarkdown(container, content) {
+  if (!window.marked || !window.DOMPurify) {
+    const paragraph = document.createElement('p');
+    paragraph.textContent = content;
+    container.replaceChildren(paragraph);
+    return;
+  }
+
+  const parsed = window.marked.parse(String(content), {
+    async: false,
+    breaks: true,
+    gfm: true,
+  });
+  const sanitized = window.DOMPurify.sanitize(parsed, {
+    USE_PROFILES: { html: true },
+  });
+  container.innerHTML = sanitized;
+
+  $$('a', container).forEach((link) => {
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+  });
+
+  $$('pre > code', container).forEach((code) => {
+    const pre = code.parentElement;
+    const languageClass = [...code.classList].find((name) => name.startsWith('language-'));
+    const language = languageClass?.slice('language-'.length) || 'texto';
+    const block = document.createElement('div');
+    block.className = 'code-block';
+    block.innerHTML = `
+      <div class="code-toolbar">
+        <span class="code-language"></span>
+        <button class="copy-code" type="button"><i class="ph-duotone ph-copy"></i><span>Copiar</span></button>
+      </div>`;
+    $('.code-language', block).textContent = language;
+    pre.before(block);
+    block.append(pre);
+  });
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const helper = document.createElement('textarea');
+    helper.value = text;
+    helper.setAttribute('readonly', '');
+    helper.style.position = 'fixed';
+    helper.style.opacity = '0';
+    document.body.append(helper);
+    helper.select();
+    document.execCommand('copy');
+    helper.remove();
+  }
+}
+
 function persist() {
   localStorage.setItem('jarvis:messages', JSON.stringify(state.messages.slice(-40)));
   localStorage.setItem('jarvis:model', state.model);
@@ -264,8 +320,15 @@ function appendMessage(role, content, options = {}) {
   const avatar = role === 'user'
     ? '<div class="avatar user-avatar">VOCÊ</div>'
     : `<div class="avatar assistant-avatar"><i class="ph-duotone ${options.error ? 'ph-warning' : 'ph-sparkle'}"></i></div>`;
-  article.innerHTML = `${avatar}<div class="message-content"><div class="message-meta"><strong>${role === 'user' ? 'Você' : 'JARVIS'}</strong><span>${options.time || timeLabel()}</span></div><p></p></div>`;
-  $('p', article).textContent = content;
+  article.innerHTML = `${avatar}<div class="message-content"><div class="message-meta"><strong>${role === 'user' ? 'Você' : 'JARVIS'}</strong><span>${options.time || timeLabel()}</span></div><div class="markdown-body"></div></div>`;
+  const body = $('.markdown-body', article);
+  if (role === 'assistant' && !options.error) {
+    renderMarkdown(body, content);
+  } else {
+    const paragraph = document.createElement('p');
+    paragraph.textContent = content;
+    body.append(paragraph);
+  }
   elements.chatFeed.append(article);
   elements.messageCount.textContent = String(1 + state.messages.length);
   requestAnimationFrame(() => { elements.chatScroll.scrollTop = elements.chatScroll.scrollHeight; });
@@ -421,6 +484,19 @@ function initBottomResize() {
 document.addEventListener('click', async (event) => {
   const target = event.target.closest('button, [data-view], [data-nav], [data-action]');
   if (!target) return;
+
+  if (target.classList.contains('copy-code')) {
+    const code = target.closest('.code-block')?.querySelector('code')?.textContent || '';
+    await copyText(code);
+    const label = $('span', target);
+    label.textContent = 'Copiado';
+    target.classList.add('copied');
+    setTimeout(() => {
+      label.textContent = 'Copiar';
+      target.classList.remove('copied');
+    }, 1600);
+    return;
+  }
 
   if (target.dataset.windowAction && bridge?.window) {
     if (target.dataset.windowAction === 'close') await bridge.window.close();

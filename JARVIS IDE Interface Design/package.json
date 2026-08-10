@@ -8,10 +8,12 @@
     "start": "electron .",
     "dev": "electron .",
     "check": "node --check electron/main.js && node --check electron/preload.js && node --check backend/server.js && node --check src/app.js",
-    "test": "node --test backend/server.test.js"
+    "test": "node --test backend/server.test.js src/markdown.test.js"
   },
   "dependencies": {
-    "@phosphor-icons/web": "^2.1.2"
+    "@phosphor-icons/web": "^2.1.2",
+    "dompurify": "^3.4.13",
+    "marked": "^18.0.9"
   },
   "devDependencies": {
     "electron": "^43.3.0"
