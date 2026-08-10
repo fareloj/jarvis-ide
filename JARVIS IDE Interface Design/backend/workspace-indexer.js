@@ -119,4 +119,40 @@ async function saveNote({ projectPath, title, content } = {}) {
   return { corpus: id, noteId, path: notePath, containerPath: `/jarvis-workspace/${id}` };
 }
 
-module.exports = { STAGING_ROOT, corpusId, saveNote, stageProject };
+async function listCorpusDocuments({ corpus, projectPath } = {}) {
+  const id = String(corpus || (projectPath ? corpusId(path.resolve(projectPath)) : '')).trim();
+  if (!/^[a-z0-9][a-z0-9-]{0,160}$/.test(id)) throw new Error('Corpus inválido.');
+  const root = path.join(STAGING_ROOT, id);
+  assertInsideStaging(root);
+  const documents = [];
+
+  async function walk(current) {
+    const entries = await fs.readdir(current, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+      const absolute = path.join(current, entry.name);
+      if (entry.isDirectory()) await walk(absolute);
+      else if (entry.isFile()) {
+        const stat = await fs.stat(absolute);
+        const relative = path.relative(root, absolute).replaceAll('\\', '/');
+        documents.push({
+          path: relative,
+          size: stat.size,
+          extension: path.extname(entry.name).slice(1).toLowerCase() || 'text',
+          source: relative.startsWith('notes/') ? 'memory' : 'project',
+        });
+      }
+    }
+  }
+
+  try {
+    await walk(root);
+  } catch (error) {
+    if (error.code === 'ENOENT') return { corpus: id, documents: [], totalBytes: 0 };
+    throw error;
+  }
+  documents.sort((left, right) => left.path.localeCompare(right.path));
+  return { corpus: id, documents, totalBytes: documents.reduce((sum, item) => sum + item.size, 0) };
+}
+
+module.exports = { STAGING_ROOT, corpusId, listCorpusDocuments, saveNote, stageProject };

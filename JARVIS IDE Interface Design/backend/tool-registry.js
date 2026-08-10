@@ -7,6 +7,17 @@ const { listMemories, saveMemory } = require('./memory-store');
 
 const execFileAsync = promisify(execFile);
 const pendingApprovals = new Map();
+const TEXT_EXTENSIONS = new Set([
+  '.c', '.cc', '.cpp', '.cs', '.css', '.csv', '.go', '.h', '.hpp', '.html', '.java', '.js', '.json',
+  '.jsx', '.kt', '.md', '.mjs', '.php', '.py', '.rb', '.rs', '.sh', '.sql', '.svelte', '.toml', '.ts',
+  '.tsx', '.txt', '.vue', '.xml', '.yaml', '.yml',
+]);
+const TEXT_FILENAMES = new Set(['dockerfile', 'makefile', '.editorconfig', '.gitignore', '.npmrc']);
+
+function isTextFile(filePath) {
+  const name = path.basename(filePath).toLowerCase();
+  return TEXT_FILENAMES.has(name) || TEXT_EXTENSIONS.has(path.extname(name));
+}
 
 const DEFINITIONS = Object.freeze([
   {
@@ -102,7 +113,7 @@ async function listProjectFiles(projectPath, relativePath) {
       if (entry.isSymbolicLink() || (entry.isDirectory() && skipped.has(entry.name))) continue;
       const absolute = path.join(current, entry.name);
       if (entry.isDirectory()) await walk(absolute);
-      else if (entry.isFile()) output.push(path.relative(root, absolute));
+      else if (entry.isFile() && isTextFile(absolute)) output.push(path.relative(root, absolute));
     }
   }
   await walk(target);
@@ -118,7 +129,7 @@ async function runTool(name, args = {}, context = {}) {
   if (name === 'project_read_file') {
     const { target, relative } = resolveProjectTarget(projectPath, args.path);
     const stat = await fs.stat(target);
-    if (!stat.isFile() || stat.size > 500_000) throw new Error('O arquivo não é textual ou excede 500 KB.');
+    if (!stat.isFile() || !isTextFile(target) || stat.size > 500_000) throw new Error('O arquivo não é textual ou excede 500 KB.');
     return { path: relative, content: await fs.readFile(target, 'utf8') };
   }
   if (name === 'memory_list') return { memories: await listMemories(projectPath) };
@@ -153,4 +164,3 @@ async function resolveApproval(id, approved) {
 }
 
 module.exports = { describeTools, publicDefinitions, requestTool, resolveApproval, resolveProjectTarget, runTool };
-

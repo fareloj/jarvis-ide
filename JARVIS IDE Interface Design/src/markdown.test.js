@@ -17,7 +17,7 @@ test('parser reconhece Markdown GFM e blocos de código com linguagem', () => {
     '',
     '| Estado | Valor |',
     '| --- | --- |',
-    '| MVP | pronto |',
+    '| JARVIS | pronto |',
   ].join('\n');
 
   const html = marked.parse(markdown, { gfm: true, breaks: true });

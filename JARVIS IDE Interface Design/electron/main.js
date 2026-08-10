@@ -64,6 +64,22 @@ function registerIpc() {
     const projectPath = result.filePaths[0];
     return { path: projectPath, name: path.basename(projectPath) };
   });
+  ipcMain.handle('project:list-files', async (_event, payload) => {
+    const response = await fetch(`${backend.url}/api/project/files`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao listar arquivos.');
+    return data;
+  });
+  ipcMain.handle('project:read-file', async (_event, payload) => {
+    const response = await fetch(`${backend.url}/api/project/file`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao ler o arquivo.');
+    return data;
+  });
 
   ipcMain.handle('backend:health', async () => {
     const response = await fetch(`${backend.url}/health`);
@@ -87,6 +103,14 @@ function registerIpc() {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Falha ao pesquisar no RAG.');
+    return data;
+  });
+  ipcMain.handle('rag:documents', async (_event, payload) => {
+    const response = await fetch(`${backend.url}/api/rag/documents`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao listar o corpus.');
     return data;
   });
   ipcMain.handle('rag:save-note', async (_event, payload) => {

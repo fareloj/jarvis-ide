@@ -27,7 +27,7 @@
 
         <div class="project-crumb no-drag" id="projectCrumb">
           <i class="ph-duotone ph-folder"></i>
-          <span id="projectName">orion-api</span>
+          <span id="projectName">Nenhum projeto</span>
           <span class="slash">/</span>
           <span class="branch">main</span>
         </div>
@@ -40,10 +40,10 @@
             <span id="activeModelLabel">GPT-OSS 120B</span>
             <i class="ph-duotone ph-caret-down subtle"></i>
           </button>
-          <button class="top-pill" title="Perfil do agente">
+          <div class="top-pill" title="Perfil do agente">
             <i class="ph-duotone ph-chat-circle-dots"></i>
             <span>Agente local</span>
-          </button>
+          </div>
           <button class="connection-pill" id="connectionStatus" title="Estado do backend">
             <span class="status-dot checking"></span>
             <span class="connection-label">conectando…</span>
@@ -57,14 +57,11 @@
       <main class="welcome-screen" id="welcomeScreen">
         <section class="welcome-primary">
           <div class="welcome-mark">JARVIS</div>
-          <p class="welcome-tagline">Um ambiente onde o agente pensa com você — simples agora, extensível depois.</p>
+          <p class="welcome-tagline">Seu projeto, contexto e execução em um só lugar.</p>
 
           <div class="welcome-actions">
             <button class="button primary" data-action="open-project">
               <i class="ph-duotone ph-folder-open"></i>Abrir projeto
-            </button>
-            <button class="button secondary" data-action="enter-workspace">
-              <i class="ph-duotone ph-chat-teardrop-dots"></i>Abrir demonstração
             </button>
             <button class="button ghost" data-action="new-chat">
               <i class="ph-duotone ph-sparkle"></i>Novo chat
@@ -72,26 +69,10 @@
           </div>
 
           <div class="recent-heading">Projetos recentes</div>
-          <div class="recent-projects">
-            <button class="recent-project" data-action="enter-workspace">
-              <span>
-                <strong>orion-api</strong>
-                <small>~/dev/orion-api · main</small>
-              </span>
-              <span class="recent-meta">há 12 minutos<small>chat disponível</small></span>
-            </button>
-            <button class="recent-project" data-action="enter-workspace">
-              <span>
-                <strong>atlas-web</strong>
-                <small>~/dev/atlas-web · feat/checkout</small>
-              </span>
-              <span class="recent-meta">ontem<small>7 mensagens</small></span>
-            </button>
-          </div>
+          <div class="recent-projects" id="recentProjects"></div>
 
           <div class="welcome-shortcuts">
             <span><kbd>Ctrl</kbd><kbd>O</kbd> abrir projeto</span>
-            <span><kbd>Ctrl</kbd><kbd>K</kbd> paleta</span>
             <span><kbd>Ctrl</kbd><kbd>N</kbd> novo chat</span>
           </div>
         </section>
@@ -106,9 +87,9 @@
               <div><dt>Backend</dt><dd id="welcomeBackend">verificando</dd></div>
             </dl>
           </div>
-          <div class="mvp-note">
-            <span class="mvp-index">01</span>
-            <p class="eyebrow">Escopo atual</p>
+          <div class="product-note">
+            <span class="product-index">01</span>
+            <p class="eyebrow">Ambiente agentic</p>
             <h2>Contexto que acompanha.</h2>
             <p>O JARVIS conecta Ollama Cloud ao seu projeto, recupera conhecimento pelo RAG e mantém memórias explícitas entre conversas.</p>
           </div>
@@ -119,7 +100,6 @@
         <nav class="activity-rail" aria-label="Navegação principal">
           <button class="rail-button active" data-nav="chat" title="Chat"><i class="ph-duotone ph-chat-teardrop-dots"></i></button>
           <button class="rail-button" data-nav="files" title="Arquivos"><i class="ph-duotone ph-files"></i></button>
-          <button class="rail-button" data-nav="diff" title="Alterações"><i class="ph-duotone ph-git-diff"></i></button>
           <button class="rail-button" data-nav="rag" title="RAG"><i class="ph-duotone ph-database"></i></button>
           <button class="rail-button" data-nav="history" title="Histórico"><i class="ph-duotone ph-clock-counter-clockwise"></i></button>
           <span class="rail-spacer"></span>
@@ -132,7 +112,7 @@
             <button class="panel-icon" data-action="toggle-sidebar" title="Recolher painel"><i class="ph-duotone ph-caret-line-left"></i></button>
           </div>
           <div class="sidebar-body" id="sidebarBody"></div>
-          <div class="sidebar-footer" id="sidebarFooter"><span>12 arquivos</span><span class="accent-text">MVP</span></div>
+          <div class="sidebar-footer" id="sidebarFooter"><span>JARVIS</span><span class="accent-text">local</span></div>
         </aside>
 
         <button class="collapsed-handle hidden" id="sidebarHandle" data-action="toggle-sidebar" title="Abrir painel esquerdo">
@@ -142,8 +122,6 @@
         <section class="workbench">
           <div class="editor-tabs">
             <button class="editor-tab active" data-view="chat"><i class="ph-duotone ph-chat-circle-dots"></i>Chat</button>
-            <button class="editor-tab" data-view="editor"><i class="ph-duotone ph-code"></i>Editor <span class="tab-detail">app.ts</span></button>
-            <button class="editor-tab" data-view="diff"><i class="ph-duotone ph-git-diff"></i>Diff <span class="tab-badge">3</span></button>
             <span class="tabs-spacer"></span>
             <button class="panel-icon" data-action="toggle-inspector" title="Alternar painel de contexto"><i class="ph-duotone ph-columns"></i></button>
           </div>
@@ -171,8 +149,7 @@
                 <textarea id="chatInput" rows="1" placeholder="Converse com o JARVIS…" aria-label="Mensagem"></textarea>
                 <div class="composer-toolbar">
                   <div>
-                    <button type="button" class="composer-icon" title="Anexos estarão disponíveis em breve"><i class="ph-duotone ph-paperclip"></i></button>
-                    <button type="button" class="composer-icon" title="RAG estará disponível em breve"><i class="ph-duotone ph-database"></i></button>
+                    <button type="button" class="composer-icon" data-nav="rag" title="Abrir conhecimento do projeto"><i class="ph-duotone ph-database"></i></button>
                   </div>
                   <div class="composer-actions">
                     <span class="composer-hint"><kbd>Enter</kbd> enviar · <kbd>Shift</kbd>+<kbd>Enter</kbd> nova linha</span>
@@ -183,53 +160,18 @@
             </div>
           </section>
 
-          <section class="content-view hidden" data-content-view="editor">
-            <div class="editor-header">
-              <div><i class="ph-duotone ph-file-ts"></i><span>src/app.ts</span><small>leitura disponível para tools</small></div>
-              <button class="button compact secondary" disabled>Salvar</button>
-            </div>
-            <div class="code-editor" aria-label="Prévia do editor">
-              <ol>
-                <li><span class="keyword">import</span> { JarvisClient } <span class="keyword">from</span> <span class="string">'./core/client'</span>;</li>
-                <li></li>
-                <li><span class="keyword">const</span> jarvis = <span class="keyword">new</span> JarvisClient({</li>
-                <li>&nbsp;&nbsp;model: <span class="string">'gpt-oss:120b-cloud'</span>,</li>
-                <li>&nbsp;&nbsp;tools: <span class="literal">false</span>,</li>
-                <li>&nbsp;&nbsp;rag: <span class="literal">false</span>,</li>
-                <li>});</li>
-                <li></li>
-                <li><span class="comment">// Editor real entra na próxima etapa.</span></li>
-                <li><span class="keyword">export default</span> jarvis;</li>
-              </ol>
-            </div>
-          </section>
-
-          <section class="content-view hidden" data-content-view="diff">
-            <div class="diff-toolbar">
-              <div><strong>3 alterações</strong><span>prévia visual</span></div>
-              <div><button class="button compact secondary" disabled>Descartar</button><button class="button compact primary" disabled>Aceitar</button></div>
-            </div>
-            <div class="diff-empty">
-              <i class="ph-duotone ph-git-diff"></i>
-              <h2>Nenhuma alteração produzida pelo chat</h2>
-              <p>A edição de arquivos será conectada quando as tools forem adicionadas. O componente de diff já está preparado.</p>
-            </div>
-          </section>
-
           <section class="bottom-panel" id="bottomPanel">
             <div class="bottom-resizer"></div>
             <div class="bottom-tabs">
               <button class="bottom-tab active" data-bottom="terminal">Terminal</button>
-              <button class="bottom-tab" data-bottom="problems">Problemas <span>0</span></button>
               <button class="bottom-tab" data-bottom="logs">Logs</button>
               <span class="tabs-spacer"></span>
               <button class="panel-icon" data-action="toggle-bottom"><i class="ph-duotone ph-caret-down"></i></button>
             </div>
-            <div class="terminal-output" data-bottom-view="terminal">
+            <div class="terminal-output" id="terminalOutput" data-bottom-view="terminal">
               <p><span class="prompt-project">jarvis</span> <span class="muted">on</span> <span class="prompt-branch">main</span> <span class="prompt-symbol">❯</span> <span class="muted">terminal mediado pelo agente</span></p>
               <p class="terminal-note">Comandos solicitados pela IA só executam depois da sua aprovação.</p>
             </div>
-            <div class="bottom-copy hidden" data-bottom-view="problems">Nenhum problema registrado.</div>
             <div class="bottom-copy hidden" data-bottom-view="logs" id="logOutput">Aguardando eventos do aplicativo…</div>
           </section>
         </section>

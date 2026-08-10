@@ -2,7 +2,7 @@
   "name": "jarvis-ide",
   "version": "0.1.0",
   "private": true,
-  "description": "JARVIS agentic development environment MVP",
+  "description": "JARVIS agentic development environment",
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",

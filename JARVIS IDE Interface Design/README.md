@@ -1,6 +1,6 @@
 # JARVIS IDE
 
-MVP desktop em Electron para o JARVIS, com Ollama Cloud para conversa e um Hybrid RAG Engine local acelerado por GPU. As respostas chegam por streaming e suportam Markdown GFM; conversas, memórias e notas persistem localmente. O agente pode pesquisar o RAG, ler arquivos confinados ao projeto e usar skills declarativas. Escrita de memória e terminal exigem aprovação explícita na interface.
+Aplicativo desktop em Electron para o JARVIS, com Ollama Cloud para conversa e um Hybrid RAG Engine local acelerado por GPU. As respostas chegam por streaming e suportam Markdown GFM; conversas, memórias e notas persistem localmente. O agente pode pesquisar o RAG, ler arquivos confinados ao projeto e usar skills declarativas. Escrita de memória e terminal exigem aprovação explícita na interface.
 
 ## Requisitos
 

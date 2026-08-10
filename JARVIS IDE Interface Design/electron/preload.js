@@ -15,11 +15,14 @@ contextBridge.exposeInMainWorld('jarvis', {
   },
   project: {
     open: () => ipcRenderer.invoke('project:open'),
+    listFiles: (payload) => ipcRenderer.invoke('project:list-files', payload),
+    readFile: (payload) => ipcRenderer.invoke('project:read-file', payload),
   },
   rag: {
     health: () => ipcRenderer.invoke('rag:health'),
     indexProject: (payload) => ipcRenderer.invoke('rag:index-project', payload),
     search: (payload) => ipcRenderer.invoke('rag:search', payload),
+    documents: (payload) => ipcRenderer.invoke('rag:documents', payload),
     saveNote: (payload) => ipcRenderer.invoke('rag:save-note', payload),
   },
   memory: {

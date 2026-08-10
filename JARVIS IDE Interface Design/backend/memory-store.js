@@ -28,7 +28,14 @@ async function writeMemories(projectPath, memories) {
 }
 
 async function listMemories(projectPath) {
-  return (await readMemories(projectPath)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const sorted = (await readMemories(projectPath)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const seen = new Set();
+  return sorted.filter((memory) => {
+    const signature = `${memory.kind}\u0000${memory.content}`;
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
 }
 
 async function saveMemory({ projectPath, title, content, kind = 'context' } = {}) {
@@ -47,6 +54,13 @@ async function saveMemory({ projectPath, title, content, kind = 'context' } = {}
     updatedAt: now,
   };
   const memories = await readMemories(normalizedProject);
+  const duplicate = memories.find((item) => item.kind === memory.kind && item.content === memory.content);
+  if (duplicate) {
+    duplicate.title = safeTitle;
+    duplicate.updatedAt = now;
+    await writeMemories(normalizedProject, memories.slice(-500));
+    return { corpus: corpusId(normalizedProject), memory: duplicate, deduplicated: true };
+  }
   memories.push(memory);
   await writeMemories(normalizedProject, memories.slice(-500));
   return { corpus: corpusId(normalizedProject), memory };

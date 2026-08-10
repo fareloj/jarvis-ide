@@ -1,7 +1,7 @@
 const http = require('node:http');
 const { EVENT_TYPES, createRunEvent } = require('./protocol');
 const rag = require('./rag-client');
-const { saveNote, stageProject } = require('./workspace-indexer');
+const { listCorpusDocuments, saveNote, stageProject } = require('./workspace-indexer');
 const { formatMemoriesForPrompt, listMemories, saveMemory } = require('./memory-store');
 const { formatSkillsForPrompt, listSkills, loadActiveSkills } = require('./skill-loader');
 const tools = require('./tool-registry');
@@ -106,7 +106,7 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
   const conversation = normalizeMessages(messages);
   const activeSkills = await loadActiveSkills(options.activeSkills);
   const skillPrompt = formatSkillsForPrompt(activeSkills);
-  const memories = options.projectPath ? await listMemories(options.projectPath) : [];
+  const memories = options.projectPath && !options.memoryContextIncluded ? await listMemories(options.projectPath) : [];
   const memoryPrompt = formatMemoriesForPrompt(memories);
   if (skillPrompt) conversation.unshift({ role: 'system', content: skillPrompt });
   if (memoryPrompt) conversation.unshift({ role: 'system', content: `Memória persistente do projeto:\n${memoryPrompt}` });
@@ -268,6 +268,28 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
         return;
       }
 
+      if (request.method === 'POST' && request.url === '/api/rag/documents') {
+        const body = await readJson(request);
+        sendJson(response, 200, await listCorpusDocuments(body));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/project/files') {
+        const body = await readJson(request);
+        sendJson(response, 200, await tools.runTool('project_list_files', { path: body.path }, {
+          projectPath: body.projectPath,
+        }));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/project/file') {
+        const body = await readJson(request);
+        sendJson(response, 200, await tools.runTool('project_read_file', { path: body.path }, {
+          projectPath: body.projectPath,
+        }));
+        return;
+      }
+
       if (request.method === 'POST' && request.url === '/api/rag/notes') {
         const body = await readJson(request);
         const note = await saveNote(body);
@@ -298,6 +320,7 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
           projectPath: body.projectPath,
           corpus: body.corpus,
           toolsEnabled: body.toolsEnabled,
+          memoryContextIncluded: body.memoryContextIncluded,
         });
         return;
       }

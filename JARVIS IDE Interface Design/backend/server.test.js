@@ -1,6 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const http = require('node:http');
+const os = require('node:os');
+const path = require('node:path');
+
+const memoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-server-memory-'));
+process.env.JARVIS_MEMORY_PATH = memoryRoot;
 const { startBackend } = require('./server');
 
 function requestJson(url, { method = 'GET', body } = {}) {
@@ -51,12 +57,14 @@ function requestText(url, { method = 'GET', body } = {}) {
 
 test('health e chat preservam o contrato do frontend', async (context) => {
   const originalFetch = global.fetch;
+  const chatPayloads = [];
   global.fetch = async (url, options = {}) => {
     if (String(url).endsWith('/api/tags')) {
       return new Response(JSON.stringify({ models: [] }), { status: 200 });
     }
     if (String(url).endsWith('/api/chat')) {
       const payload = JSON.parse(options.body);
+      chatPayloads.push(payload);
       assert.equal(payload.messages.at(-1).content, 'Olá, JARVIS');
       if (payload.stream) {
         const chunks = [
@@ -83,6 +91,7 @@ test('health e chat preservam o contrato do frontend', async (context) => {
   context.after(() => {
     backend.server.close();
     global.fetch = originalFetch;
+    fs.rmSync(memoryRoot, { recursive: true, force: true });
   });
 
   const health = await requestJson(`${backend.url}/health`);
@@ -114,5 +123,33 @@ test('health e chat preservam o contrato do frontend', async (context) => {
   assert.deepEqual(events.map((event) => event.type), ['message.delta', 'message.delta', 'message.done']);
   assert.ok(events.every((event) => event.runId === 'run-test-1'));
   assert.ok(events.every((event) => !Number.isNaN(Date.parse(event.timestamp))));
+
+  const projectPath = path.join(os.tmpdir(), 'jarvis-project-memory-context');
+  const savedMemory = await requestJson(`${backend.url}/api/memory`, {
+    method: 'POST',
+    body: {
+      projectPath,
+      title: 'Banco principal',
+      content: 'O projeto usa PostgreSQL.',
+      kind: 'decision',
+    },
+  });
+  assert.equal(savedMemory.status, 200);
+
+  const memoryStream = await requestText(`${backend.url}/api/chat/stream`, {
+    method: 'POST',
+    body: {
+      model: 'gpt-oss:120b-cloud',
+      runId: 'run-memory-context',
+      projectPath,
+      messages: [{ role: 'user', content: 'Olá, JARVIS' }],
+    },
+  });
+  assert.equal(memoryStream.status, 200);
+  const memoryPrompt = chatPayloads.at(-1).messages.find((message) => (
+    message.role === 'system' && message.content.includes('Memória persistente do projeto')
+  ));
+  assert.ok(memoryPrompt);
+  assert.match(memoryPrompt.content, /Banco principal: O projeto usa PostgreSQL\./);
   assert.equal(events.map((event) => event.payload.content || '').join(''), 'Olá! **Tudo bem?**');
 });
