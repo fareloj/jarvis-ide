@@ -26,6 +26,29 @@ function requestJson(url, { method = 'GET', body } = {}) {
   });
 }
 
+function requestText(url, { method = 'GET', body } = {}) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url);
+    const request = http.request({
+      hostname: target.hostname,
+      port: target.port,
+      path: target.pathname,
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+    }, (response) => {
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => resolve({
+        status: response.statusCode,
+        body: Buffer.concat(chunks).toString('utf8'),
+      }));
+    });
+    request.on('error', reject);
+    if (body) request.write(JSON.stringify(body));
+    request.end();
+  });
+}
+
 test('health e chat preservam o contrato do frontend', async (context) => {
   const originalFetch = global.fetch;
   global.fetch = async (url, options = {}) => {
@@ -34,8 +57,19 @@ test('health e chat preservam o contrato do frontend', async (context) => {
     }
     if (String(url).endsWith('/api/chat')) {
       const payload = JSON.parse(options.body);
-      assert.equal(payload.stream, false);
       assert.equal(payload.messages.at(-1).content, 'Olá, JARVIS');
+      if (payload.stream) {
+        const chunks = [
+          JSON.stringify({ model: payload.model, message: { content: 'Olá' }, done: false }),
+          JSON.stringify({ model: payload.model, message: { content: '! **Tudo bem?**' }, done: false }),
+          JSON.stringify({ model: payload.model, message: { content: '' }, done: true }),
+        ];
+        return new Response(`${chunks.join('\n')}\n`, {
+          status: 200,
+          headers: { 'Content-Type': 'application/x-ndjson' },
+        });
+      }
+      assert.equal(payload.stream, false);
       return new Response(JSON.stringify({
         model: payload.model,
         done: true,
@@ -66,4 +100,16 @@ test('health e chat preservam o contrato do frontend', async (context) => {
   assert.equal(chat.status, 200);
   assert.equal(chat.body.message, 'Olá! Como posso ajudar?');
   assert.equal(chat.body.model, 'gpt-oss:120b-cloud');
+
+  const streamed = await requestText(`${backend.url}/api/chat/stream`, {
+    method: 'POST',
+    body: {
+      model: 'gpt-oss:120b-cloud',
+      messages: [{ role: 'user', content: 'Olá, JARVIS' }],
+    },
+  });
+  assert.equal(streamed.status, 200);
+  const events = streamed.body.trim().split('\n').map((line) => JSON.parse(line));
+  assert.deepEqual(events.map((event) => event.type), ['chunk', 'chunk', 'done']);
+  assert.equal(events.map((event) => event.content || '').join(''), 'Olá! **Tudo bem?**');
 });

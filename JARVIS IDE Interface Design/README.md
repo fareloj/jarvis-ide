@@ -1,6 +1,6 @@
 # JARVIS IDE
 
-MVP desktop em Electron para o JARVIS, com interface completa de navegação e um backend mínimo de chatbot conectado ao Ollama. As respostas suportam Markdown GFM, tabelas, código inline e blocos de código com cópia. RAG, terminal, edição por agente e skills permanecem desativados nesta fase.
+MVP desktop em Electron para o JARVIS, com interface completa de navegação e um backend mínimo de chatbot conectado ao Ollama. As respostas chegam por streaming, podem ser interrompidas e suportam Markdown GFM, tabelas, código inline e blocos de código com cópia. RAG, terminal, edição por agente e skills permanecem desativados nesta fase.
 
 ## Requisitos
 
@@ -42,6 +42,9 @@ backend/   servidor HTTP local e ponte para Ollama
 electron/  janela desktop, preload seguro e IPC
 src/       interface, estilos e comportamento do frontend
 _ds/       design system original exportado do Claude Design
+docs/      decisões e referências da arquitetura agentic
 ```
 
 As credenciais nunca são expostas ao renderer do Electron. O frontend conversa com o backend através do preload isolado.
+
+O desenho planejado para tools, skills, terminal e RAG está em [docs/AGENT_ARCHITECTURE.md](docs/AGENT_ARCHITECTURE.md).

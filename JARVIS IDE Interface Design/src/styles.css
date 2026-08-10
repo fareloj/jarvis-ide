@@ -368,6 +368,14 @@ kbd { padding: 1px 4px; border: 1px solid var(--line); border-bottom-width: 2px;
 .send-button:hover { background: var(--cyan-dark); }
 .send-button:disabled { background: var(--line); }
 .send-button i { font-size: 15px; }
+.send-button.is-stop { background: var(--magenta); }
+.send-button.is-stop:hover { background: var(--magenta-dark); }
+.send-button.is-stop::before { content: ''; width: 9px; height: 9px; border-radius: 2px; background: white; }
+.composer textarea:disabled { color: var(--ink-4); cursor: wait; }
+.streaming-message .markdown-body::after { content: ''; display: inline-block; width: 6px; height: 14px; margin-left: 3px; vertical-align: -2px; background: var(--cyan); animation: stream-cursor 0.85s steps(2, jump-none) infinite; }
+#connectionStatus { cursor: pointer; }
+
+@keyframes stream-cursor { 50% { opacity: 0; } }
 
 .editor-header, .diff-toolbar { height: 44px; display: flex; justify-content: space-between; align-items: center; padding: 0 14px; border-bottom: 1px solid var(--line-soft); }
 .editor-header > div { display: flex; align-items: center; gap: 7px; }

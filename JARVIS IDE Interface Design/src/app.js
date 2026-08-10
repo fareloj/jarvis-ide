@@ -9,6 +9,7 @@ const state = {
   sidebarOpen: true,
   inspectorOpen: true,
   busy: false,
+  activeRequestId: null,
   model: localStorage.getItem('jarvis:model') || 'gpt-oss:120b-cloud',
   messages: JSON.parse(localStorage.getItem('jarvis:messages') || '[]'),
   project: JSON.parse(localStorage.getItem('jarvis:project') || 'null') || {
@@ -344,15 +345,34 @@ function appendTyping() {
   return article;
 }
 
+function setChatBusy(busy) {
+  state.busy = busy;
+  elements.chatInput.disabled = busy;
+  elements.sendButton.classList.toggle('is-stop', busy);
+  elements.sendButton.setAttribute('aria-label', busy ? 'Interromper resposta' : 'Enviar mensagem');
+  elements.sendButton.title = busy ? 'Interromper resposta' : 'Enviar mensagem';
+  elements.sendButton.innerHTML = busy
+    ? ''
+    : '<i class="ph-duotone ph-arrow-up"></i>';
+}
+
+async function cancelActiveChat() {
+  if (!state.activeRequestId) return;
+  await bridge?.backend?.cancelChat?.(state.activeRequestId);
+}
+
 function renderSavedMessages() {
   for (const message of state.messages) appendMessage(message.role, message.content, { time: message.time });
 }
 
-async function sendMessage(text) {
+function sendMessage(text) {
   const content = text.trim();
-  if (!content || state.busy) return;
-  state.busy = true;
-  elements.sendButton.disabled = true;
+  if (state.busy) {
+    cancelActiveChat();
+    return;
+  }
+  if (!content) return;
+  setChatBusy(true);
   elements.chatInput.value = '';
   resizeComposer();
 
@@ -365,8 +385,8 @@ async function sendMessage(text) {
   log(`chat · mensagem enviada para ${state.model}`);
 
   try {
-    if (!bridge?.backend) throw new Error('Abra a interface pelo Electron para usar o backend.');
-    const response = await bridge.backend.chat({
+    if (!bridge?.backend?.startChat) throw new Error('Abra a interface pelo Electron para usar o backend.');
+    const requestId = bridge.backend.startChat({
       model: state.model,
       messages: [
         {
@@ -376,26 +396,80 @@ async function sendMessage(text) {
         ...state.messages.map(({ role, content: messageContent }) => ({ role, content: messageContent })),
       ],
     });
-    typing.remove();
-    const assistantMessage = { role: 'assistant', content: response.message || 'O modelo não retornou conteúdo.', time: timeLabel() };
-    state.messages.push(assistantMessage);
-    appendMessage('assistant', assistantMessage.content, { time: assistantMessage.time });
-    log(`chat · resposta recebida de ${response.model || state.model}`);
+    state.activeRequestId = requestId;
+    typing.dataset.requestId = requestId;
   } catch (error) {
     typing.remove();
     appendMessage('assistant', `Não consegui conversar com o modelo: ${error.message}`, { error: true });
     log(`erro · ${error.message}`);
     toast('Falha no chatbot', error.message, 'error');
-  } finally {
-    state.busy = false;
-    elements.sendButton.disabled = false;
+    state.activeRequestId = null;
+    setChatBusy(false);
     persist();
     renderSidebar();
     elements.chatInput.focus();
   }
 }
 
+function finishChatRequest(requestId) {
+  if (requestId !== state.activeRequestId) return;
+  state.activeRequestId = null;
+  setChatBusy(false);
+  elements.messageCount.textContent = String(1 + state.messages.length);
+  persist();
+  renderSidebar();
+  elements.chatInput.focus();
+}
+
+function handleChatEvent({ requestId, event } = {}) {
+  if (!requestId || requestId !== state.activeRequestId || !event) return;
+  let message = $(`.message[data-request-id="${requestId}"]`, elements.chatFeed);
+
+  if (event.type === 'chunk') {
+    if (message?.classList.contains('typing-message')) {
+      message.remove();
+      message = appendMessage('assistant', '', { time: timeLabel() });
+      message.dataset.requestId = requestId;
+      message.dataset.content = '';
+      message.classList.add('streaming-message');
+    }
+    message.dataset.content += event.content || '';
+    renderMarkdown($('.markdown-body', message), message.dataset.content);
+    elements.chatScroll.scrollTop = elements.chatScroll.scrollHeight;
+    return;
+  }
+
+  if (event.type === 'done') {
+    const content = message?.dataset.content || 'O modelo não retornou conteúdo.';
+    if (message?.classList.contains('typing-message')) {
+      message.remove();
+      message = appendMessage('assistant', content, { time: timeLabel() });
+    }
+    message?.classList.remove('streaming-message');
+    state.messages.push({ role: 'assistant', content, time: timeLabel() });
+    log(`chat · resposta recebida de ${event.model || state.model}`);
+    finishChatRequest(requestId);
+    return;
+  }
+
+  message?.remove();
+  if (event.type === 'cancelled') {
+    appendMessage('assistant', 'Geração interrompida.', { error: true });
+    log('chat · geração interrompida');
+  } else {
+    const detail = event.error || 'Falha inesperada no streaming.';
+    appendMessage('assistant', `Não consegui conversar com o modelo: ${detail}`, { error: true });
+    log(`erro · ${detail}`);
+    toast('Falha no chatbot', detail, 'error');
+  }
+  finishChatRequest(requestId);
+}
+
 function newChat() {
+  const requestId = state.activeRequestId;
+  if (requestId) bridge?.backend?.cancelChat?.(requestId);
+  state.activeRequestId = null;
+  setChatBusy(false);
   state.messages = [];
   persist();
   $$('.message', elements.chatFeed).forEach((message) => {
@@ -528,6 +602,8 @@ elements.chatForm.addEventListener('submit', (event) => {
   sendMessage(elements.chatInput.value);
 });
 
+bridge?.backend?.onChatEvent?.(handleChatEvent);
+
 elements.chatInput.addEventListener('input', resizeComposer);
 elements.chatInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey) {
@@ -535,6 +611,9 @@ elements.chatInput.addEventListener('keydown', (event) => {
     elements.chatForm.requestSubmit();
   }
 });
+
+elements.connection.addEventListener('click', checkHealth);
+elements.connection.title = 'Clique para verificar a conexão novamente';
 
 $$('.bottom-tab').forEach((tab) => {
   tab.addEventListener('click', () => {
