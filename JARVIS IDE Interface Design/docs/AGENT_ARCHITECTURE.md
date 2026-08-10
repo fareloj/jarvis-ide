@@ -108,7 +108,7 @@ Uma tool deve declarar ao menos:
 2. Sessões locais persistentes e protocolo de eventos independente do renderer: implementado.
 3. Adapter do Hybrid RAG Engine, staging seguro, busca e recuperação no chat: implementado.
 4. Memória explícita por projeto, independente do histórico: implementado.
-5. Registro de tools de RAG, filesystem, memória e terminal: implementado.
+5. Registro de tools de RAG, filesystem, memória, busca web e terminal: implementado.
 6. Aprovação obrigatória para escrita de memória e execução de terminal: implementado.
 7. Loader de skills declarativas com ativação pela interface: implementado.
 8. Adaptadores dedicados para Codex CLI, Claude Code e Antigravity CLI: próximos incrementos.

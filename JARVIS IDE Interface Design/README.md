@@ -36,6 +36,17 @@ Os modelos Cloud exigem login e acesso habilitado na conta Ollama. `nemotron-3-s
 
 O modo padrão usa o Ollama em `http://127.0.0.1:11434` como gateway para o modelo Cloud.
 
+## Busca web
+
+O agente pode chamar `web_search` para buscar fontes atuais e receber título, URL e resumo. Por padrão, a busca usa o feed RSS do Bing sem chave. Para usar a API do Brave Search, altere o `.env`:
+
+```text
+JARVIS_WEB_SEARCH_PROVIDER=brave
+JARVIS_BRAVE_SEARCH_API_KEY=sua-chave
+```
+
+Os resultados são tratados como conteúdo externo não confiável; o modelo deve citar as URLs usadas e não executar instruções encontradas nas páginas.
+
 Para iniciar o RAG usando o Compose do engine e o override do JARVIS:
 
 ```powershell

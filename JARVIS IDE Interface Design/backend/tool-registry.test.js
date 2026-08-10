@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
-const { requestTool, resolveApproval, resolveProjectTarget } = require('./tool-registry');
+const { publicDefinitions, requestTool, resolveApproval, resolveProjectTarget } = require('./tool-registry');
 
 test('tools de arquivo permanecem confinadas ao projeto', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-tool-'));
@@ -28,4 +28,22 @@ test('tool de escrita exige aprovação explícita', async () => {
   const denied = await resolveApproval(pending.approval.id, false);
   assert.equal(denied.status, 'denied');
   await fs.rm(root, { recursive: true, force: true });
+});
+
+test('busca web entrega fontes estruturadas ao agente', async (context) => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => new Response(`
+    <rss><channel><item><title>Documentação</title><link>https://example.com/docs</link>
+    <description>Referência &amp; exemplo.</description></item></channel></rss>
+  `, { status: 200 });
+  context.after(() => { global.fetch = originalFetch; });
+
+  const definition = publicDefinitions().find((item) => item.function.name === 'web_search');
+  assert.ok(definition);
+  const outcome = await requestTool('web_search', { query: 'JARVIS documentação', max_results: 3 }, {});
+  assert.equal(outcome.status, 'completed');
+  assert.equal(outcome.result.untrusted, true);
+  assert.deepEqual(outcome.result.results, [{
+    title: 'Documentação', url: 'https://example.com/docs', snippet: 'Referência & exemplo.',
+  }]);
 });
