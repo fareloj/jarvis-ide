@@ -4,6 +4,15 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const bridge = window.jarvis;
 const defaultProject = { name: 'orion-api', path: '~/dev/orion-api' };
 const defaultModel = localStorage.getItem('jarvis:model') || 'gpt-oss:120b-cloud';
+const modelCatalog = [
+  { id: 'gpt-oss:120b-cloud', label: 'GPT-OSS 120B Cloud', short: 'GPT-OSS 120B' },
+  { id: 'gpt-oss:20b-cloud', label: 'GPT-OSS 20B Cloud', short: 'GPT-OSS 20B' },
+  { id: 'qwen3-coder:480b-cloud', label: 'Qwen3 Coder 480B Cloud', short: 'Qwen3 Coder 480B' },
+  { id: 'nemotron-3-super', label: 'Nemotron 3 Super', short: 'Nemotron 3 Super' },
+  { id: 'nemotron-3-ultra:cloud', label: 'Nemotron 3 Ultra Cloud', short: 'Nemotron 3 Ultra' },
+  { id: 'nemotron-3-nano:30b-cloud', label: 'Nemotron 3 Nano 30B Cloud', short: 'Nemotron 3 Nano 30B' },
+  { id: 'minimax-m3:cloud', label: 'MiniMax M3 Cloud', short: 'MiniMax M3' },
+];
 const sessionStore = window.JarvisSessionStore.createSessionStore(localStorage);
 sessionStore.migrateLegacy({ fallbackProject: defaultProject, fallbackModel: defaultModel });
 const initialSession = sessionStore.getActive()
@@ -136,9 +145,7 @@ function escapeHtml(value) {
 }
 
 function shortModel(model) {
-  if (model.startsWith('gpt-oss')) return 'GPT-OSS 120B';
-  if (model.startsWith('qwen3-coder')) return 'Qwen3 Coder 480B';
-  return model;
+  return modelCatalog.find((entry) => entry.id === model)?.short || model;
 }
 
 function timeLabel(date = new Date()) {
@@ -271,7 +278,7 @@ function specialPage(type) {
       <div class="settings-grid">
         <section class="settings-group">
           <h2>Modelo</h2>
-          <div class="setting-row"><span><strong>Modelo principal</strong><small>Enviado em cada conversa</small></span><select id="modelSelect"><option value="gpt-oss:120b-cloud">GPT-OSS 120B Cloud</option><option value="qwen3-coder:480b-cloud">Qwen3 Coder 480B Cloud</option></select></div>
+          <div class="setting-row"><span><strong>Modelo principal</strong><small>Enviado em cada conversa</small></span><select id="modelSelect">${modelCatalog.map((model) => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.label)}</option>`).join('')}</select></div>
           <div class="setting-row"><span><strong>Ollama</strong><small>Configurado pelo arquivo .env</small></span><button class="button compact secondary" id="testConnection">Testar</button></div>
         </section>
         <section class="settings-group">

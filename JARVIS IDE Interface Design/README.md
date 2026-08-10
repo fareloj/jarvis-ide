@@ -20,6 +20,20 @@ ollama pull gpt-oss:120b-cloud
 npm start
 ```
 
+Modelos disponíveis no seletor:
+
+```text
+gpt-oss:120b-cloud
+gpt-oss:20b-cloud
+qwen3-coder:480b-cloud
+nemotron-3-super
+nemotron-3-ultra:cloud
+nemotron-3-nano:30b-cloud
+minimax-m3:cloud
+```
+
+Os modelos Cloud exigem login e acesso habilitado na conta Ollama. `nemotron-3-super` usa a instalação local configurada no Ollama.
+
 O modo padrão usa o Ollama em `http://127.0.0.1:11434` como gateway para o modelo Cloud.
 
 Para iniciar o RAG usando o Compose do engine e o override do JARVIS:
