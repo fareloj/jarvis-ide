@@ -4,6 +4,17 @@ const fs = require('node:fs');
 const { EVENT_TYPES, createRunEvent } = require('../backend/protocol');
 
 const OLLAMA_ORIGIN = 'https://ollama.com';
+
+// Toda conversa com o backend passa por aqui para carregar o token de
+// autenticacao. O token vive apenas no processo principal: o preload nao o
+// expoe e o renderer nunca o ve.
+function backendFetch(caminho, opcoes = {}) {
+  if (!backend?.authToken) throw new Error('O backend ainda nao esta pronto.');
+  return fetch(`${backend.url}${caminho}`, {
+    ...opcoes,
+    headers: { ...(opcoes.headers || {}), Authorization: `Bearer ${backend.authToken}` },
+  });
+}
 let loginWindow = null;
 
 app.disableHardwareAcceleration();
@@ -70,7 +81,7 @@ async function buildOllamaCookieHeader() {
 }
 
 async function submitQuotaCookie(cookie) {
-  const response = await fetch(`${backend.url}/api/ollama/quota/config`, {
+  const response = await backendFetch('/api/ollama/quota/config', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cookie }),
   });
   return response.json();
@@ -227,7 +238,7 @@ function registerIpc() {
     return { path: projectPath, name: path.basename(projectPath) };
   });
   ipcMain.handle('project:list-files', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/project/files`, {
+    const response = await backendFetch('/api/project/files', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
     });
     const data = await response.json();
@@ -235,7 +246,7 @@ function registerIpc() {
     return data;
   });
   ipcMain.handle('project:read-file', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/project/file`, {
+    const response = await backendFetch('/api/project/file', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
     });
     const data = await response.json();
@@ -243,7 +254,7 @@ function registerIpc() {
     return data;
   });
   ipcMain.handle('project:tree', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/project/tree`, {
+    const response = await backendFetch('/api/project/tree', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
     });
     const data = await response.json();
@@ -251,7 +262,7 @@ function registerIpc() {
     return data;
   });
   ipcMain.handle('project:preview', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/project/preview`, {
+    const response = await backendFetch('/api/project/preview', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
     });
     const data = await response.json();
@@ -260,7 +271,7 @@ function registerIpc() {
   });
 
   ipcMain.handle('memory:forget-session', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/memory/conversation/forget`, {
+    const response = await backendFetch('/api/memory/conversation/forget', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
     });
     const data = await response.json();
@@ -288,15 +299,15 @@ function registerIpc() {
   });
 
   ipcMain.handle('backend:health', async () => {
-    const response = await fetch(`${backend.url}/health`);
+    const response = await backendFetch('/health');
     return response.json();
   });
   ipcMain.handle('rag:health', async () => {
-    const response = await fetch(`${backend.url}/api/rag/health`);
+    const response = await backendFetch('/api/rag/health');
     return response.json();
   });
   ipcMain.handle('rag:index-project', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/rag/index`, {
+    const response = await backendFetch('/api/rag/index', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
     });
     const data = await response.json();
@@ -304,7 +315,7 @@ function registerIpc() {
     return data;
   });
   ipcMain.handle('rag:search', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/rag/search`, {
+    const response = await backendFetch('/api/rag/search', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
     });
     const data = await response.json();
@@ -312,7 +323,7 @@ function registerIpc() {
     return data;
   });
   ipcMain.handle('rag:documents', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/rag/documents`, {
+    const response = await backendFetch('/api/rag/documents', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
     });
     const data = await response.json();
@@ -320,7 +331,7 @@ function registerIpc() {
     return data;
   });
   ipcMain.handle('rag:save-note', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/rag/notes`, {
+    const response = await backendFetch('/api/rag/notes', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
     });
     const data = await response.json();
@@ -328,7 +339,7 @@ function registerIpc() {
     return data;
   });
   ipcMain.handle('memory:list', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/memory/list`, {
+    const response = await backendFetch('/api/memory/list', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
     });
     const data = await response.json();
@@ -336,7 +347,7 @@ function registerIpc() {
     return data;
   });
   ipcMain.handle('memory:save', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/memory`, {
+    const response = await backendFetch('/api/memory', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
     });
     const data = await response.json();
@@ -344,17 +355,17 @@ function registerIpc() {
     return data;
   });
   ipcMain.handle('skills:list', async () => {
-    const response = await fetch(`${backend.url}/api/skills`);
+    const response = await backendFetch('/api/skills');
     return response.json();
   });
   ipcMain.handle('skills:reviews', async () => {
-    const response = await fetch(`${backend.url}/api/skills/reviews`);
+    const response = await backendFetch('/api/skills/reviews');
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Falha ao listar revisões de skills.');
     return data;
   });
   ipcMain.handle('skills:review', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/skills/review`, {
+    const response = await backendFetch('/api/skills/review', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
     });
     const data = await response.json();
@@ -362,7 +373,7 @@ function registerIpc() {
     return data;
   });
   ipcMain.handle('skills:resolve-review', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/skills/reviews/resolve`, {
+    const response = await backendFetch('/api/skills/reviews/resolve', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
     });
     const data = await response.json();
@@ -370,7 +381,7 @@ function registerIpc() {
     return data;
   });
   ipcMain.handle('skills:curate', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/skills/curate`, {
+    const response = await backendFetch('/api/skills/curate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
     });
     const data = await response.json();
@@ -378,7 +389,7 @@ function registerIpc() {
     return data;
   });
   ipcMain.handle('skills:policy', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/skills/policy`, {
+    const response = await backendFetch('/api/skills/policy', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
     });
     const data = await response.json();
@@ -386,11 +397,11 @@ function registerIpc() {
     return data;
   });
   ipcMain.handle('tools:list', async () => {
-    const response = await fetch(`${backend.url}/api/tools`);
+    const response = await backendFetch('/api/tools');
     return response.json();
   });
   ipcMain.handle('tools:approve', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/tools/approval`, {
+    const response = await backendFetch('/api/tools/approval', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
     });
     const data = await response.json();
@@ -398,11 +409,11 @@ function registerIpc() {
     return data;
   });
   ipcMain.handle('quota:get', async () => {
-    const response = await fetch(`${backend.url}/api/ollama/quota`);
+    const response = await backendFetch('/api/ollama/quota');
     return response.json();
   });
   ipcMain.handle('quota:sync', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/ollama/quota/sync`, {
+    const response = await backendFetch('/api/ollama/quota/sync', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
     });
     return response.json();
@@ -422,7 +433,7 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle('backend:chat', async (_event, payload) => {
-    const response = await fetch(`${backend.url}/api/chat`, {
+    const response = await backendFetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload || {}),
@@ -444,7 +455,7 @@ function registerIpc() {
     };
 
     try {
-      const response = await fetch(`${backend.url}/api/chat/stream`, {
+      const response = await backendFetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...(payload || {}), runId: requestId }),

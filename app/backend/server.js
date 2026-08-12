@@ -1,4 +1,5 @@
 const http = require('node:http');
+const crypto = require('node:crypto');
 const { EVENT_TYPES, createRunEvent } = require('./protocol');
 const rag = require('./rag-client');
 const { listCorpusDocuments, saveNote, stageProject } = require('./workspace-indexer');
@@ -268,9 +269,51 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
   clientResponse.end();
 }
 
+// O backend escuta em localhost numa porta efemera. Sem autenticacao,
+// qualquer processo local que descubra a porta chama as rotas privadas —
+// ler arquivos do projeto, gravar memoria, disparar tools. O token e'
+// gerado a cada inicializacao e entregue somente ao processo principal do
+// Electron; o renderer nunca o recebe.
+const ALLOWED_METHODS = new Set(['GET', 'POST', 'OPTIONS']);
+const PUBLIC_ROUTES = new Set(['/health']);
+
+function extractBearer(request) {
+  const header = request.headers.authorization || '';
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+  return match ? match[1] : '';
+}
+
+// Comparacao em tempo constante: comparar com === vazaria o tamanho do
+// prefixo correto para quem medisse o tempo de resposta.
+function tokenMatches(provided, expected) {
+  const a = Buffer.from(String(provided));
+  const b = Buffer.from(String(expected));
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+// Uma pagina web mal-intencionada mandaria a sua propria origem. O renderer
+// carrega via file://, que envia "null", e o processo principal nao envia
+// Origin nenhuma.
+function originAllowed(request) {
+  const origin = request.headers.origin;
+  return origin === undefined || origin === 'null';
+}
+
 function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', port = 0 } = {}) {
+  const authToken = crypto.randomBytes(32).toString('hex');
+
   const server = http.createServer(async (request, response) => {
     let runId = null;
+
+    if (!ALLOWED_METHODS.has(request.method)) {
+      sendJson(response, 405, { error: 'Método não permitido.' });
+      return;
+    }
+    if (!originAllowed(request)) {
+      sendJson(response, 403, { error: 'Origem não autorizada.' });
+      return;
+    }
     if (request.method === 'OPTIONS') {
       response.writeHead(204, {
         'Access-Control-Allow-Origin': 'null',
@@ -278,6 +321,12 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
         'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
       });
       response.end();
+      return;
+    }
+
+    const rota = String(request.url || '').split('?')[0];
+    if (!PUBLIC_ROUTES.has(rota) && !tokenMatches(extractBearer(request), authToken)) {
+      sendJson(response, 401, { error: 'Requisição não autenticada.' });
       return;
     }
 
@@ -494,7 +543,7 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
     server.once('error', reject);
     server.listen(port, host, () => {
       const address = server.address();
-      resolve({ server, url: `http://${host}:${address.port}` });
+      resolve({ server, url: `http://${host}:${address.port}`, authToken });
     });
   });
 }

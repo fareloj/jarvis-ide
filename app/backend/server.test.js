@@ -9,7 +9,7 @@ const memoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-server-memory-'
 process.env.JARVIS_MEMORY_PATH = memoryRoot;
 const { startBackend } = require('./server');
 
-function requestJson(url, { method = 'GET', body } = {}) {
+function requestJson(url, { method = 'GET', body, token } = {}) {
   return new Promise((resolve, reject) => {
     const target = new URL(url);
     const request = http.request({
@@ -17,7 +17,10 @@ function requestJson(url, { method = 'GET', body } = {}) {
       port: target.port,
       path: target.pathname,
       method,
-      headers: body ? { 'Content-Type': 'application/json' } : {},
+      headers: {
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     }, (response) => {
       const chunks = [];
       response.on('data', (chunk) => chunks.push(chunk));
@@ -32,7 +35,7 @@ function requestJson(url, { method = 'GET', body } = {}) {
   });
 }
 
-function requestText(url, { method = 'GET', body } = {}) {
+function requestText(url, { method = 'GET', body, token } = {}) {
   return new Promise((resolve, reject) => {
     const target = new URL(url);
     const request = http.request({
@@ -40,7 +43,10 @@ function requestText(url, { method = 'GET', body } = {}) {
       port: target.port,
       path: target.pathname,
       method,
-      headers: body ? { 'Content-Type': 'application/json' } : {},
+      headers: {
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     }, (response) => {
       const chunks = [];
       response.on('data', (chunk) => chunks.push(chunk));
@@ -101,6 +107,7 @@ test('health e chat preservam o contrato do frontend', async (context) => {
 
   const chat = await requestJson(`${backend.url}/api/chat`, {
     method: 'POST',
+    token: backend.authToken,
     body: {
       model: 'gpt-oss:120b-cloud',
       messages: [{ role: 'user', content: 'Olá, JARVIS' }],
@@ -112,6 +119,7 @@ test('health e chat preservam o contrato do frontend', async (context) => {
 
   const streamed = await requestText(`${backend.url}/api/chat/stream`, {
     method: 'POST',
+    token: backend.authToken,
     body: {
       model: 'gpt-oss:120b-cloud',
       runId: 'run-test-1',
@@ -127,6 +135,7 @@ test('health e chat preservam o contrato do frontend', async (context) => {
   const projectPath = path.join(os.tmpdir(), 'jarvis-project-memory-context');
   const savedMemory = await requestJson(`${backend.url}/api/memory`, {
     method: 'POST',
+    token: backend.authToken,
     body: {
       projectPath,
       title: 'Banco principal',
@@ -138,6 +147,7 @@ test('health e chat preservam o contrato do frontend', async (context) => {
 
   const memoryStream = await requestText(`${backend.url}/api/chat/stream`, {
     method: 'POST',
+    token: backend.authToken,
     body: {
       model: 'gpt-oss:120b-cloud',
       runId: 'run-memory-context',
@@ -177,6 +187,7 @@ test('anexos de imagem chegam até o Ollama e mensagens sem imagem não ganham o
 
   await requestText(`${backend.url}/api/chat/stream`, {
     method: 'POST',
+    token: backend.authToken,
     body: {
       model: 'gpt-oss:120b-cloud',
       runId: 'run-image-attachment',

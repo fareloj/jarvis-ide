@@ -35,7 +35,7 @@ Não misture refatorações oportunistas, mudanças visuais e funcionalidades n�
 |---:|---|---|---|---|---|
 | 0 | Unificar o histórico Git | Claude Code | A | CONCLUÍDA | — |
 | 1 | Estabelecer CI e baseline do repositório | Claude Code | A | CONCLUÍDA | 0 |
-| 2 | Autenticar o backend local | Claude Code | A | PENDENTE | 1 |
+| 2 | Autenticar o backend local | Claude Code | A | CONCLUÍDA | 1 |
 | 3 | Criar escrita e patch estruturados | Claude Code | A | PENDENTE | 2 |
 | 4 | Endurecer terminal e execução de processos | Claude Code | A | PENDENTE | 3 |
 | 5 | Transformar o visualizador em editor | Claude Code | A | PENDENTE | 3–4 |
@@ -123,11 +123,11 @@ Impedir que outro processo local chame as rotas privadas do JARVIS apenas descob
 
 ### Critérios de aceite
 
-- [ ] Requisição sem token recebe `401` ou `403`.
-- [ ] Requisição autenticada pelo processo principal funciona.
-- [ ] O renderer não consegue ler segredos não previstos pelo preload.
-- [ ] Existe teste de acesso autorizado, não autorizado e token inválido.
-- [ ] O token muda a cada inicialização.
+- [x] Requisição sem token recebe `401` ou `403`.
+- [x] Requisição autenticada pelo processo principal funciona.
+- [x] O renderer não consegue ler segredos não previstos pelo preload.
+- [x] Existe teste de acesso autorizado, não autorizado e token inválido.
+- [x] O token muda a cada inicialização.
 
 ---
 
@@ -457,12 +457,13 @@ Registre aqui problemas encontrados durante uma tarefa sem interromper o escopo 
 
 | Data | Origem | Pendência | Prioridade | Tarefa sugerida |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| 2026-08-12 | Tarefa 2 | `backend:health` falha com `ECONNRESET` na primeira chamada após o boot: o renderer consulta antes de o servidor estar escutando. Pré-existente (aparece em logs anteriores à autenticação) e sem impacto funcional — a próxima checagem sucede. | Baixa | 9 (runtime/retry) |
 
 ## Diário de execução
 
 | Data | Tarefa | Resultado | Testes | Commit | Observações |
 |---|---:|---|---|---|---|
+| 2026-08-12 | 2 | Backend autenticado por token efêmero | 66/66 (6 novos de auth) | `feat(security): authenticate local backend requests` | Verificação manual: rota privada 401, health 200, token ausente dos logs. |
 | 2026-08-12 | 1 | CI Windows/Node 20 + documentos de contribuição | `ci` simulado em clone limpo: 60/60 | `ci: add Windows validation workflow` | Validado com `npm ci` real em clone novo. README corrigido de 46 para 60 testes. |
 | 2026-08-12 | 0 | Histórico unificado em `claude/foundation-phase` | `check` OK, 60/60 | merges `origin/main` + `c/continuous-skill-review` | Sem conflitos: a linha do roadmap só continha commits de documentação desde o ancestral `7673b5b`. |
 
