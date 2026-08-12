@@ -135,3 +135,32 @@ Uma tool deve declarar ao menos:
 - Marketplace de plugins.
 - Execução remota e sincronização entre dispositivos.
 - Tool Search completo; no início, um catálogo pequeno e explícito é mais seguro.
+
+## Fronteira de execução de comandos
+
+O terminal mediado pelo agente não roda em sandbox de sistema operacional. A decisão foi avaliada e
+recusada por ora:
+
+- **Windows Sandbox** exige Pro/Enterprise, sobe uma VM por sessão (segundos de latência e centenas
+  de MB) e não enxerga o workspace sem mapeamento explícito — o que reintroduz o mesmo problema de
+  confinamento que ele deveria resolver.
+- **Container** obrigaria Docker como dependência dura do app, quando hoje ele é opcional (só o RAG
+  usa), e quebraria o caso de uso principal: rodar `npm test` contra o projeto do usuário, com as
+  dependências que já estão instaladas no disco dele.
+- **Runner dedicado** resolveria o isolamento, mas exige infraestrutura que um app desktop local não
+  tem.
+
+A fronteira adotada é de processo, em camadas:
+
+| Camada | O que impede |
+|---|---|
+| Classificação por efeito | Rotula leitura, escrita, rede, execução e destruição para auditoria e para a decisão de aprovação |
+| Allowlist de casamento total | Só dispensa aprovação para leitura pura; qualquer encadeamento (`;`, `&&`, `\|`, `$()`, backtick) recai na aprovação |
+| Ambiente saneado | O comando não herda `OLLAMA_API_KEY`, `JARVIS_TAVILY_API_KEY` nem o token do backend |
+| Limites | Tamanho do comando, bytes de saída e timeout |
+| `taskkill /T /F` | Encerra a árvore inteira no cancelamento ou timeout, já que matar o pai no Windows deixaria netos vivos |
+| Auditoria em JSONL | Comando, classe, decisão, status, código de saída e duração, sobrevivendo à reinicialização |
+
+O que essa fronteira **não** garante: um comando aprovado pelo usuário roda com os privilégios da
+conta dele e pode alcançar o sistema inteiro. A aprovação humana é o controle principal; as camadas
+acima reduzem o alcance do que passa sem ela e tornam auditável o que passou.

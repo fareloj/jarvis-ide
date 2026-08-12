@@ -7,6 +7,7 @@ const rag = require('./rag-client');
 const { listMemories, saveMemory } = require('./memory-store');
 const { searchWeb } = require('./web-search');
 const fileWrite = require('./file-write');
+const commandPolicy = require('./command-policy');
 
 const execFileAsync = promisify(execFile);
 const pendingApprovals = new Map();
@@ -390,12 +391,14 @@ async function runTool(name, args = {}, context = {}) {
   if (name === 'memory_list') return { memories: await listMemories(projectPath) };
   if (name === 'memory_save') return saveMemory({ projectPath, ...args });
   if (name === 'terminal_run') {
-    const command = String(args.command || '').trim().slice(0, 8_000);
-    if (!command) throw new Error('Comando vazio.');
-    const { stdout, stderr } = await execFileAsync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command], {
-      cwd: path.resolve(projectPath), timeout: 60_000, maxBuffer: 1_000_000, windowsHide: true,
+    const command = String(args.command || '').trim();
+    const decisao = commandPolicy.decide(command);
+    if (!decisao.permitido) throw new Error(decisao.motivo);
+    return commandPolicy.runCommand(command, {
+      cwd: path.resolve(projectPath),
+      signal: context.signal,
+      decisao,
     });
-    return { stdout, stderr, exitCode: 0 };
   }
   if (name === 'delegate_coding_task') return delegateCodingTask(projectPath, args.agent, args.prompt);
   // As tools de escrita nunca chegam aqui pelo caminho normal: elas sao
@@ -425,6 +428,15 @@ async function requestTool(name, args, context) {
   if (!definition) throw new Error(`Tool desconhecida: ${name}`);
   if (definition.policy.approval === 'never') return { status: 'completed', result: await runTool(name, args, context) };
 
+  // Comando de leitura pura reconhecido pela allowlist roda direto; qualquer
+  // encadeamento ou classe acima de leitura cai na aprovacao normal.
+  if (name === 'terminal_run') {
+    const decisao = commandPolicy.decide(args.command);
+    if (decisao.permitido && !decisao.exigeAprovacao) {
+      return { status: 'completed', result: await runTool(name, args, context) };
+    }
+  }
+
   const plano = await planIfWrite(name, args, context);
   const id = `approval-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   pendingApprovals.set(id, { id, name, args, context, plano, createdAt: Date.now() });
@@ -436,6 +448,7 @@ async function requestTool(name, args, context) {
       name,
       args,
       risk: definition.policy.risk,
+      ...(name === 'terminal_run' ? { classe: commandPolicy.decide(args.command).classe } : {}),
       ...(plano ? { diff: plano.diff, resumo: plano.resumo } : {}),
     },
   };
@@ -456,6 +469,7 @@ async function resolveApproval(id, approved) {
 }
 
 module.exports = {
+  commandPolicy,
   delegateCodingTask,
   fileWrite, describeTools, listProjectDirectory, previewProjectFile, publicDefinitions,
   requestTool, resolveApproval, resolveProjectTarget, runTool,

@@ -37,7 +37,7 @@ Não misture refatorações oportunistas, mudanças visuais e funcionalidades n�
 | 1 | Estabelecer CI e baseline do repositório | Claude Code | A | CONCLUÍDA | 0 |
 | 2 | Autenticar o backend local | Claude Code | A | CONCLUÍDA | 1 |
 | 3 | Criar escrita e patch estruturados | Claude Code | A | CONCLUÍDA | 2 |
-| 4 | Endurecer terminal e execução de processos | Claude Code | A | PENDENTE | 3 |
+| 4 | Endurecer terminal e execução de processos | Claude Code | A | CONCLUÍDA | 3 |
 | 5 | Transformar o visualizador em editor | Claude Code | A | PENDENTE | 3–4 |
 | 6 | Implementar integração Git e Diff | Claude Code | A | PENDENTE | 5 |
 | Gate | Revisar e integrar a Fase A na `main` | Codex | Integração | PENDENTE | 0–6 |
@@ -175,12 +175,12 @@ Substituir “PowerShell iniciado no workspace” por uma fronteira de execuçã
 
 ### Critérios de aceite
 
-- [ ] Um comando não consegue escapar silenciosamente do escopo autorizado.
-- [ ] Cancelar encerra também processos filhos.
-- [ ] Timeout não deixa processo órfão.
-- [ ] Segredos de ambiente não são herdados por padrão.
-- [ ] Auditoria sobrevive à reinicialização.
-- [ ] Testes cobrem escape, timeout, recusa e cancelamento.
+- [x] Um comando não consegue escapar silenciosamente do escopo autorizado.
+- [x] Cancelar encerra também processos filhos.
+- [x] Timeout não deixa processo órfão.
+- [x] Segredos de ambiente não são herdados por padrão.
+- [x] Auditoria sobrevive à reinicialização.
+- [x] Testes cobrem escape, timeout, recusa e cancelamento.
 
 ---
 
@@ -463,6 +463,7 @@ Registre aqui problemas encontrados durante uma tarefa sem interromper o escopo 
 
 | Data | Tarefa | Resultado | Testes | Commit | Observações |
 |---|---:|---|---|---|---|
+| 2026-08-12 | 4 | Política de comandos, ambiente saneado e kill de árvore | 84/84 (9 novos) | `feat(execution): isolate terminal processes` | Timeout e cancelamento verificados com processo real gerando neto. Sandbox de SO avaliada e recusada; decisão documentada. |
 | 2026-08-12 | 3 | `project_write_file` e `project_apply_patch` com plano congelado | 75/75 (9 novos) | `feat(tools): add approval-gated file patches` | Symlink barrado por realpath; junction criada de verdade no teste. |
 | 2026-08-12 | 2 | Backend autenticado por token efêmero | 66/66 (6 novos de auth) | `feat(security): authenticate local backend requests` | Verificação manual: rota privada 401, health 200, token ausente dos logs. |
 | 2026-08-12 | 1 | CI Windows/Node 20 + documentos de contribuição | `ci` simulado em clone limpo: 60/60 | `ci: add Windows validation workflow` | Validado com `npm ci` real em clone novo. README corrigido de 46 para 60 testes. |
