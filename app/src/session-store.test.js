@@ -77,3 +77,26 @@ test('titleGenerated sobrevive ao salvar de novo', () => {
   assert.equal(relido.title, 'Plano de migração');
   assert.equal(relido.titleGenerated, true, 'sem isso o modelo renomearia a conversa a cada mensagem');
 });
+
+test('versões editadas persistem com seus históricos separados', () => {
+  const storage = new MemoryStorage();
+  const store = createSessionStore(storage);
+  const session = store.create({ project: { name: 'P', path: '/p' }, model: 'm' });
+  store.save({
+    ...session,
+    messages: [{ role: 'user', content: 'Pergunta B', branchId: 'ramo-1' }],
+    branches: {
+      'ramo-1': {
+        active: 1,
+        variants: [
+          { messages: [{ role: 'user', content: 'Pergunta A', branchId: 'ramo-1' }, { role: 'assistant', content: 'Resposta A' }] },
+          { messages: [{ role: 'user', content: 'Pergunta B', branchId: 'ramo-1' }, { role: 'assistant', content: 'Resposta B' }] },
+        ],
+      },
+    },
+  });
+  const restored = store.get(session.id);
+  assert.equal(restored.branches['ramo-1'].active, 1);
+  assert.equal(restored.branches['ramo-1'].variants[0].messages[1].content, 'Resposta A');
+  assert.equal(restored.messages[0].branchId, 'ramo-1');
+});

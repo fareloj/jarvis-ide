@@ -2,6 +2,8 @@
 
 Aplicativo desktop em Electron para o JARVIS, com Ollama Cloud para conversa e um Hybrid RAG Engine local acelerado por GPU. As respostas chegam por streaming e suportam Markdown GFM; conversas, memórias e notas persistem localmente. O agente pode pesquisar o RAG, ler arquivos confinados ao projeto e usar skills declarativas. Escrita de memória e terminal exigem aprovação explícita na interface.
 
+As mensagens do usuário podem ser editadas para regenerar a conversa a partir daquele ponto. O histórico anterior à edição é preservado como uma versão separada e pode ser alternado pelos controles `‹ 1/2 ›`, inclusive após reiniciar o aplicativo.
+
 ## Requisitos
 
 - Node.js 20 ou superior

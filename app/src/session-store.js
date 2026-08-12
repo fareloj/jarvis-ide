@@ -32,12 +32,41 @@
     if (!Array.isArray(messages)) return [];
     return messages
       .filter((message) => message && ['user', 'assistant'].includes(message.role))
-      .map((message) => ({
-        role: message.role,
-        content: String(message.content || '').slice(0, 80_000),
-        time: String(message.time || ''),
-      }))
+      .map((message) => {
+        const normalized = {
+          role: message.role,
+          content: String(message.content || '').slice(0, 80_000),
+          time: String(message.time || ''),
+        };
+        if (message.displayContent !== undefined) {
+          normalized.displayContent = String(message.displayContent || '').slice(0, 80_000);
+        }
+        if (message.branchId) normalized.branchId = String(message.branchId).slice(0, 100);
+        if (Array.isArray(message.attachmentsMeta)) {
+          normalized.attachmentsMeta = message.attachmentsMeta.slice(0, 20).map((attachment) => ({
+            name: String(attachment?.name || '').slice(0, 260),
+            kind: String(attachment?.kind || '').slice(0, 30),
+            mime: String(attachment?.mime || '').slice(0, 120),
+            size: Math.max(0, Number(attachment?.size) || 0),
+          }));
+        }
+        return normalized;
+      })
       .slice(-80);
+  }
+
+  function normalizeBranches(branches) {
+    if (!branches || typeof branches !== 'object' || Array.isArray(branches)) return {};
+    return Object.fromEntries(Object.entries(branches).slice(-30).flatMap(([id, group]) => {
+      const variants = Array.isArray(group?.variants)
+        ? group.variants.slice(-10).map((variant) => ({ messages: normalizeMessages(variant?.messages) }))
+        : [];
+      if (!variants.length) return [];
+      return [[String(id).slice(0, 100), {
+        active: Math.max(0, Math.min(variants.length - 1, Number(group.active) || 0)),
+        variants,
+      }]];
+    }));
   }
 
   function createSessionStore(storage) {
@@ -68,6 +97,7 @@
         },
         model: String(session.model || 'gpt-oss:120b-cloud'),
         messages,
+        branches: normalizeBranches(session.branches),
         archived: Boolean(session.archived),
         // Marca que o modelo ja batizou a conversa, para nao regerar a cada
         // mensagem nem sobrescrever um titulo que o usuario tenha ajustado.
