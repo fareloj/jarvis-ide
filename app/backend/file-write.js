@@ -311,10 +311,49 @@ async function planPatch({ projectPath, files = [] } = {}) {
   };
 }
 
+/**
+ * Aplica um patch de varios arquivos como uma operacao unica.
+ *
+ * Aplicar em laco deixava o projeto num estado que o usuario nunca aprovou:
+ * se o terceiro arquivo falhasse (conflito de hash, junction trocada, disco
+ * cheio), os dois primeiros ficavam gravados e a metade da mudanca virava o
+ * novo estado do repositorio. Aqui qualquer falha desfaz tudo o que ja' foi
+ * gravado nesta operacao, na ordem inversa.
+ */
+async function applyPatch(planos) {
+  const aplicados = [];
+  try {
+    for (const plano of planos) aplicados.push(await applyWrite(plano));
+    return aplicados;
+  } catch (error) {
+    const revertidos = [];
+    const naoRevertidos = [];
+    for (const aplicado of [...aplicados].reverse()) {
+      try {
+        await undoWrite(aplicado.backupId);
+        revertidos.push(aplicado.path);
+      } catch (falha) {
+        // Reverter tambem pode falhar (arquivo editado por terceiro no meio
+        // do caminho). Nao engolimos: o usuario precisa saber o que sobrou.
+        naoRevertidos.push(`${aplicado.path} (${falha.message})`);
+      }
+    }
+    error.revertidos = revertidos;
+    error.naoRevertidos = naoRevertidos;
+    error.message = [
+      error.message,
+      revertidos.length ? `Alterações desfeitas: ${revertidos.join(', ')}.` : 'Nenhum arquivo chegou a ser alterado.',
+      naoRevertidos.length ? `Não foi possível desfazer: ${naoRevertidos.join('; ')}.` : '',
+    ].filter(Boolean).join(' ');
+    throw error;
+  }
+}
+
 module.exports = {
   BACKUP_ROOT,
   MAX_FILES_PER_OPERATION,
   MAX_FILE_BYTES,
+  applyPatch,
   applyWrite,
   hashOf,
   revalidateTarget,

@@ -461,8 +461,9 @@ async function resolveApproval(id, approved) {
   if (!approved) return { status: 'denied', name: pending.name };
 
   if (pending.plano) {
-    const aplicados = [];
-    for (const plano of pending.plano.planos) aplicados.push(await fileWrite.applyWrite(plano));
+    // Transacional: se um arquivo do patch falhar, os anteriores voltam ao
+    // estado original em vez de deixar meia mudanca aplicada.
+    const aplicados = await fileWrite.applyPatch(pending.plano.planos);
     return { status: 'completed', name: pending.name, result: { arquivos: aplicados } };
   }
   return { status: 'completed', name: pending.name, result: await runTool(pending.name, pending.args, pending.context) };

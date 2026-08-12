@@ -217,6 +217,51 @@ test('a gravação é atômica e não deixa arquivo temporário para trás', asy
   await fs.rm(raiz, { recursive: true, force: true });
 });
 
+test('falha no meio do patch restaura todos os arquivos já alterados', async () => {
+  const raiz = await projetoTemporario();
+  await fs.writeFile(path.join(raiz, 'um.txt'), 'um original', 'utf8');
+  await fs.writeFile(path.join(raiz, 'dois.txt'), 'dois original', 'utf8');
+  await fs.writeFile(path.join(raiz, 'tres.txt'), 'tres original', 'utf8');
+
+  const { planos } = await fileWrite.planPatch({
+    projectPath: raiz,
+    files: [
+      { path: 'um.txt', content: 'um novo' },
+      { path: 'novo.txt', content: 'arquivo criado pelo patch' },
+      { path: 'tres.txt', content: 'tres novo' },
+    ],
+  });
+
+  // Terceiro arquivo muda depois do plano: o patch inteiro tem de falhar.
+  await fs.writeFile(path.join(raiz, 'tres.txt'), 'editado por terceiro', 'utf8');
+
+  await assert.rejects(fileWrite.applyPatch(planos), /desfeitas/i);
+
+  assert.equal(await fs.readFile(path.join(raiz, 'um.txt'), 'utf8'), 'um original', 'o primeiro arquivo volta ao original');
+  await assert.rejects(fs.stat(path.join(raiz, 'novo.txt')), { code: 'ENOENT' }, 'o arquivo criado é removido');
+  assert.equal(await fs.readFile(path.join(raiz, 'tres.txt'), 'utf8'), 'editado por terceiro', 'a edição de terceiro é preservada');
+  assert.equal(await fs.readFile(path.join(raiz, 'dois.txt'), 'utf8'), 'dois original');
+
+  await fs.rm(raiz, { recursive: true, force: true });
+});
+
+test('patch bem-sucedido aplica todos os arquivos', async () => {
+  const raiz = await projetoTemporario();
+  await fs.writeFile(path.join(raiz, 'a.txt'), 'a', 'utf8');
+
+  const { planos } = await fileWrite.planPatch({
+    projectPath: raiz,
+    files: [{ path: 'a.txt', content: 'a alterado' }, { path: 'sub/b.txt', content: 'b novo' }],
+  });
+  const aplicados = await fileWrite.applyPatch(planos);
+
+  assert.equal(aplicados.length, 2);
+  assert.equal(await fs.readFile(path.join(raiz, 'a.txt'), 'utf8'), 'a alterado');
+  assert.equal(await fs.readFile(path.join(raiz, 'sub', 'b.txt'), 'utf8'), 'b novo');
+
+  await fs.rm(raiz, { recursive: true, force: true });
+});
+
 test('patch limita a quantidade de arquivos por operação', async () => {
   const raiz = await projetoTemporario();
   const demais = Array.from({ length: fileWrite.MAX_FILES_PER_OPERATION + 1 }, (_, i) => ({
