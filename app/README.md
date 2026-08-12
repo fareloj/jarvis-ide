@@ -49,6 +49,12 @@ JARVIS_BRAVE_SEARCH_API_KEY=sua-chave
 
 Os resultados são tratados como conteúdo externo não confiável; o modelo deve citar as URLs usadas e não executar instruções encontradas nas páginas.
 
+## Aprendizado contínuo
+
+O JARVIS revisa a conversa a cada três respostas e pode propor a criação ou atualização de uma skill. A revisão roda separada do chat, sem tools, e nunca altera arquivos automaticamente. Em **Configurações → Aprendizado contínuo**, é possível comparar o `SKILL.md` atual com o proposto, aplicar ou descartar a mudança e executar uma revisão manual.
+
+As propostas e estatísticas de uso persistem na pasta de dados do aplicativo. Antes de aplicar uma atualização, o JARVIS confirma que a skill não mudou desde a proposta e salva um backup da versão anterior.
+
 Para iniciar o RAG usando o Compose do engine e o override do JARVIS:
 
 ```powershell

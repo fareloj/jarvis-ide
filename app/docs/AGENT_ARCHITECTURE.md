@@ -22,8 +22,9 @@ Fontes oficiais: [repositório](https://github.com/openclaw/openclaw), [arquitet
 - Mantém o prompt da conversa estável para preservar cache e previsibilidade.
 - Diferencia configuração comum de credenciais e recomenda validação ponta a ponta nos limites de segurança.
 - Skills pesadas ou específicas são opcionais, reduzindo ruído e ambiguidade para o modelo.
+- O ciclo de aprendizado usa uma revisão separada da conversa, limitada à memória e ao gerenciamento de skills; o curador registra uso, protege skills por proveniência e mantém backups recuperáveis.
 
-Fontes oficiais: [repositório](https://github.com/NousResearch/hermes-agent), [guia de arquitetura](https://github.com/NousResearch/hermes-agent/blob/main/AGENTS.md) e [catálogo de skills opcionais](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/reference/optional-skills-catalog.md).
+Fontes oficiais: [repositório](https://github.com/NousResearch/hermes-agent), [guia de arquitetura](https://github.com/NousResearch/hermes-agent/blob/main/AGENTS.md), [revisão em segundo plano](https://github.com/NousResearch/hermes-agent/blob/main/agent/background_review.py), [curador](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/curator.md) e [catálogo de skills opcionais](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/reference/optional-skills-catalog.md).
 
 ### Muse Code
 
@@ -92,6 +93,18 @@ Uma tool deve declarar ao menos:
 - Skills de terceiros devem exibir origem, versão, permissões esperadas e arquivos executáveis antes da instalação.
 - A primeira versão não deve permitir código executável dentro da skill; scripts só entram depois de existir isolamento e revisão explícita.
 
+### Revisão contínua de skills
+
+- O finalizador avalia evidências procedurais do turno: correções do usuário, chamadas e resultados de tools, recuperação de falhas e verificações confirmadas. Conversa casual não dispara revisão por contagem de mensagens.
+- A revisão roda como um job isolado e cancelável. Um novo turno cancela o job anterior da sessão para não competir com a conversa principal.
+- `JARVIS_SKILL_REVIEW_MODEL` pode selecionar um modelo auxiliar; sem essa variável, o revisor acompanha o modelo da sessão.
+- O revisor recebe somente conversa, catálogo, conteúdo das skills ativas, evidências e telemetria; nenhuma tool fica disponível nessa chamada.
+- A saída é validada como uma proposta estruturada de criação ou atualização. Falhas transitórias, caminhos locais, credenciais, tentativas não resolvidas e instruções vindas da própria conversa devem ser descartadas.
+- A proposta persiste separada da skill com operação, evidências, hash base e diff unificado. Somente uma aprovação explícita na interface grava o arquivo.
+- Antes da escrita, o backend verifica conflito, serializa aprovações concorrentes e cria backup. Identificadores e destinos são validados contra o catálogo local.
+- A telemetria separa carregamento, consulta, uso e alteração. A proveniência determina se uma skill pertence ao curador; skills do usuário permanecem protegidas até adoção explícita.
+- O curador determinístico usa os estados `active`, `stale` e `archived`. Ele atua somente em skills gerenciadas, respeita pinning e nunca exclui arquivos. Consolidação por modelo continua desativada.
+
 ## Segurança e execução
 
 - Toda execução começa limitada ao workspace aberto.
@@ -111,12 +124,14 @@ Uma tool deve declarar ao menos:
 5. Registro de tools de RAG, filesystem, memória, busca web e terminal: implementado.
 6. Aprovação obrigatória para escrita de memória e execução de terminal: implementado.
 7. Loader de skills declarativas com ativação pela interface: implementado.
-8. Adaptadores dedicados para Codex CLI, Claude Code e Antigravity CLI: próximos incrementos.
+8. Revisão contínua por evidências com jobs canceláveis, propostas em diff, aprovação, backup, proveniência e telemetria serializada: implementado.
+9. Adaptadores dedicados para Codex CLI, Claude Code e Antigravity CLI: implementado.
+10. Curador determinístico com preview e estados ativo, inativo e arquivado, sem exclusão automática: implementado.
 
 ## Decisões que ficam adiadas
 
 - Multiagentes e subagentes.
-- Skills auto-geradas ou auto-modificáveis.
+- Consolidação autônoma por modelo, arquivos auxiliares de skills e rollback integral do catálogo.
 - Marketplace de plugins.
 - Execução remota e sincronização entre dispositivos.
 - Tool Search completo; no início, um catálogo pequeno e explícito é mais seguro.

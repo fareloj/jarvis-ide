@@ -37,6 +37,11 @@ contextBridge.exposeInMainWorld('jarvis', {
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
+    reviews: () => ipcRenderer.invoke('skills:reviews'),
+    review: (payload) => ipcRenderer.invoke('skills:review', payload),
+    resolveReview: (payload) => ipcRenderer.invoke('skills:resolve-review', payload),
+    curate: (payload) => ipcRenderer.invoke('skills:curate', payload),
+    policy: (payload) => ipcRenderer.invoke('skills:policy', payload),
   },
   tools: {
     list: () => ipcRenderer.invoke('tools:list'),

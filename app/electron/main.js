@@ -347,6 +347,44 @@ function registerIpc() {
     const response = await fetch(`${backend.url}/api/skills`);
     return response.json();
   });
+  ipcMain.handle('skills:reviews', async () => {
+    const response = await fetch(`${backend.url}/api/skills/reviews`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao listar revisões de skills.');
+    return data;
+  });
+  ipcMain.handle('skills:review', async (_event, payload) => {
+    const response = await fetch(`${backend.url}/api/skills/review`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao revisar skills.');
+    return data;
+  });
+  ipcMain.handle('skills:resolve-review', async (_event, payload) => {
+    const response = await fetch(`${backend.url}/api/skills/reviews/resolve`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao resolver a revisão de skill.');
+    return data;
+  });
+  ipcMain.handle('skills:curate', async (_event, payload) => {
+    const response = await fetch(`${backend.url}/api/skills/curate`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao executar a curadoria de skills.');
+    return data;
+  });
+  ipcMain.handle('skills:policy', async (_event, payload) => {
+    const response = await fetch(`${backend.url}/api/skills/policy`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao atualizar a política da skill.');
+    return data;
+  });
   ipcMain.handle('tools:list', async () => {
     const response = await fetch(`${backend.url}/api/tools`);
     return response.json();
@@ -450,6 +488,9 @@ function registerIpc() {
 app.whenReady().then(async () => {
   try {
     loadEnvironment();
+    if (!process.env.JARVIS_SKILL_REVIEW_PATH) {
+      process.env.JARVIS_SKILL_REVIEW_PATH = path.join(app.getPath('userData'), 'skill-reviews');
+    }
     const { startBackend } = require('../backend/server');
     backend = await startBackend();
     console.log(`Backend rodando em ${backend.url}`);

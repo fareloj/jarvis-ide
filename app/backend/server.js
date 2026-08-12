@@ -7,8 +7,10 @@ const { formatSkillsForPrompt, listSkills, loadActiveSkills } = require('./skill
 const tools = require('./tool-registry');
 const quota = require('./quota-monitor');
 const conversationMemory = require('./conversation-memory');
+const { createSkillReview } = require('./skill-review');
 
 const DEFAULT_MODEL = process.env.JARVIS_OLLAMA_MODEL || 'gpt-oss:120b-cloud';
+const SKILL_REVIEW_MODEL = process.env.JARVIS_SKILL_REVIEW_MODEL || '';
 const OLLAMA_HOST = (process.env.JARVIS_OLLAMA_HOST || 'http://127.0.0.1:11434').replace(/\/$/, '');
 
 function sendJson(response, statusCode, payload) {
@@ -89,14 +91,16 @@ async function checkOllama() {
   }
 }
 
-async function chat(messages, model = DEFAULT_MODEL) {
+async function chat(messages, model = DEFAULT_MODEL, options = {}) {
   const normalized = normalizeMessages(messages);
 
   const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
     method: 'POST',
     headers: ollamaHeaders(),
     body: JSON.stringify({ model, messages: normalized, stream: false }),
-    signal: AbortSignal.timeout(180_000),
+    signal: options.signal
+      ? AbortSignal.any([options.signal, AbortSignal.timeout(180_000)])
+      : AbortSignal.timeout(180_000),
   });
 
   const payload = await response.json().catch(() => ({}));
@@ -113,9 +117,20 @@ async function chat(messages, model = DEFAULT_MODEL) {
   };
 }
 
+const skillReview = createSkillReview({
+  reviewModel: SKILL_REVIEW_MODEL,
+  generate: async (messages, model, options) => (await chat(messages, model || DEFAULT_MODEL, options)).message,
+});
+
 async function streamChat(messages, model, runId, clientResponse, abortController, options = {}) {
+  skillReview.cancelReview(options.sessionId);
   const conversation = normalizeMessages(messages);
-  const activeSkills = await loadActiveSkills(options.activeSkills);
+  const skillStates = await skillReview.listSkillStates();
+  const activeSkills = (await loadActiveSkills(options.activeSkills))
+    .filter((skill) => skillStates[skill.id]?.state !== 'archived');
+  skillReview.recordUsage({ skillIds: activeSkills.map((skill) => skill.id), event: 'loaded' }).catch((error) => {
+    console.error('[skills] falha ao registrar uso:', error.message);
+  });
   const skillPrompt = formatSkillsForPrompt(activeSkills);
   const memories = options.projectPath && !options.memoryContextIncluded ? await listMemories(options.projectPath) : [];
   const memoryPrompt = formatMemoriesForPrompt(memories);
@@ -151,6 +166,7 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
 
   let doneSent = false;
   let finalAssistantContent = '';
+  const runMetrics = { toolCalls: 0, toolResults: 0, toolFailures: 0 };
   const emit = (type, payload) => clientResponse.write(`${JSON.stringify(createRunEvent(runId, type, payload))}\n`);
 
   for (let turn = 0; turn < 5 && !doneSent; turn += 1) {
@@ -193,9 +209,11 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
     if (!toolCalls.length) {
       doneSent = true;
       finalAssistantContent = assistantContent;
-      emit(EVENT_TYPES.MESSAGE_DONE, { model: model || DEFAULT_MODEL });
+      emit(EVENT_TYPES.MESSAGE_DONE, { model: model || DEFAULT_MODEL, evidence: runMetrics });
       break;
     }
+
+    runMetrics.toolCalls += toolCalls.length;
 
     conversation.push({ role: 'assistant', content: assistantContent, tool_calls: toolCalls });
     let approvalRequired = false;
@@ -213,13 +231,18 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
         emit(EVENT_TYPES.APPROVAL_REQUIRED, outcome.approval);
         continue;
       }
+      runMetrics.toolResults += 1;
       const result = JSON.stringify(outcome.result).slice(0, 120_000);
       emit(EVENT_TYPES.TOOL_RESULT, { name, result: outcome.result });
       conversation.push({ role: 'tool', tool_name: name, content: result });
     }
     if (approvalRequired) {
       doneSent = true;
-      emit(EVENT_TYPES.MESSAGE_DONE, { model: model || DEFAULT_MODEL, awaitingApproval: true });
+      emit(EVENT_TYPES.MESSAGE_DONE, {
+        model: model || DEFAULT_MODEL,
+        awaitingApproval: true,
+        evidence: { ...runMetrics, awaitingApproval: true },
+      });
     }
   }
   if (!doneSent) {
@@ -270,7 +293,45 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
       }
 
       if (request.method === 'GET' && request.url === '/api/skills') {
-        sendJson(response, 200, { skills: (await listSkills()).map(({ content, ...skill }) => skill) });
+        const states = await skillReview.listSkillStates();
+        sendJson(response, 200, {
+          skills: (await listSkills()).map(({ content, ...skill }) => ({ ...skill, lifecycle: states[skill.id] || null })),
+        });
+        return;
+      }
+
+      if (request.method === 'GET' && request.url === '/api/skills/reviews') {
+        sendJson(response, 200, { proposals: await skillReview.listProposals() });
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/skills/review') {
+        const body = await readJson(request, 5_000_000);
+        sendJson(response, 200, await skillReview.review(body));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/skills/reviews/resolve') {
+        const body = await readJson(request);
+        sendJson(response, 200, await skillReview.resolve(body.id, body.approved === true));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/skills/curate') {
+        const body = await readJson(request);
+        sendJson(response, 200, await skillReview.curate({ apply: body.apply === true }));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/skills/policy') {
+        const body = await readJson(request);
+        sendJson(response, 200, {
+          lifecycle: await skillReview.setSkillPolicy(body.skillId, {
+            pinned: typeof body.pinned === 'boolean' ? body.pinned : undefined,
+            adopt: body.adopt === true,
+            state: body.state,
+          }),
+        });
         return;
       }
 
