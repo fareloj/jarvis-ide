@@ -88,7 +88,7 @@ flowchart TB
 
 - **Node.js 20+** and **npm**
 - **[Ollama](https://ollama.com)** running locally — it also acts as the gateway to Ollama Cloud
-- *Optional* — the **Hybrid RAG Engine** Docker stack, for project RAG and cross-chat memory.
+- *Optional* — the **[Hybrid RAG Engine](https://github.com/fareloj/hybrid-rag-engine)** Docker stack, for project RAG and cross-chat memory.
   Without it the chat works normally; it just stops recalling other conversations.
 
 ## Quick start
