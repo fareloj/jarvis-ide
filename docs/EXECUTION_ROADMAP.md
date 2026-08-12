@@ -33,7 +33,7 @@ Não misture refatorações oportunistas, mudanças visuais e funcionalidades n�
 
 | Ordem | Tarefa | Responsável | Fase | Estado | Dependência |
 |---:|---|---|---|---|---|
-| 0 | Unificar o histórico Git | Claude Code | A | PENDENTE | — |
+| 0 | Unificar o histórico Git | Claude Code | A | CONCLUÍDA | — |
 | 1 | Estabelecer CI e baseline do repositório | Claude Code | A | PENDENTE | 0 |
 | 2 | Autenticar o backend local | Claude Code | A | PENDENTE | 1 |
 | 3 | Criar escrita e patch estruturados | Claude Code | A | PENDENTE | 2 |
@@ -74,12 +74,12 @@ Produzir uma branch que preserve a correção do README remoto, a edição de me
 
 ### Critérios de aceite
 
-- [ ] Os quatro commits ou seus efeitos estão presentes na branch integrada.
-- [ ] `npm run check` passa.
-- [ ] Os 60 testes da versão com curadoria passam.
-- [ ] Edição de mensagem continua preservando versões.
-- [ ] Revisão contínua continua exigindo aprovação.
-- [ ] O Git não mostra arquivos não rastreados ou alterações acidentais.
+- [x] Os quatro commits ou seus efeitos estão presentes na branch integrada.
+- [x] `npm run check` passa.
+- [x] Os 60 testes da versão com curadoria passam.
+- [x] Edição de mensagem continua preservando versões.
+- [x] Revisão contínua continua exigindo aprovação.
+- [x] O Git não mostra arquivos não rastreados ou alterações acidentais.
 
 ---
 
@@ -463,7 +463,7 @@ Registre aqui problemas encontrados durante uma tarefa sem interromper o escopo 
 
 | Data | Tarefa | Resultado | Testes | Commit | Observações |
 |---|---:|---|---|---|---|
-| — | — | — | — | — | — |
+| 2026-08-12 | 0 | Histórico unificado em `claude/foundation-phase` | `check` OK, 60/60 | merges `origin/main` + `c/continuous-skill-review` | Sem conflitos: a linha do roadmap só continha commits de documentação desde o ancestral `7673b5b`. |
 
 ## Definição de conclusão do roadmap
 
