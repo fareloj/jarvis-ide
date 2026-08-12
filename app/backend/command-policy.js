@@ -128,13 +128,39 @@ function decide(command, { allowSafeReads = false } = {}) {
 // O processo do Electron carrega OLLAMA_API_KEY, JARVIS_TAVILY_API_KEY e o
 // token do backend. Herdar tudo entregaria esses segredos a qualquer
 // comando. Montamos um ambiente minimo com o que um shell precisa.
-function sanitizedEnv() {
-  const permitidas = ['PATH', 'Path', 'SystemRoot', 'windir', 'COMSPEC', 'TEMP', 'TMP', 'USERPROFILE', 'HOME', 'HOMEDRIVE', 'HOMEPATH', 'PATHEXT', 'NUMBER_OF_PROCESSORS', 'OS', 'PROCESSOR_ARCHITECTURE'];
+const ENV_BASE = [
+  'PATH', 'Path', 'SystemRoot', 'windir', 'COMSPEC', 'TEMP', 'TMP', 'USERPROFILE', 'HOME',
+  'HOMEDRIVE', 'HOMEPATH', 'PATHEXT', 'NUMBER_OF_PROCESSORS', 'OS', 'PROCESSOR_ARCHITECTURE',
+];
+
+// Uma CLI de agente (Claude Code, Codex, Antigravity) precisa de mais que um
+// shell: ela le' a credencial que o usuario ja' configurou interativamente,
+// guardada no perfil do Windows (%APPDATA%, %LOCALAPPDATA%, ~/.claude,
+// ~/.codex) ou no cofre do sistema. Sem essas variaveis a CLI cai em "nao
+// autenticado" e a delegacao para de funcionar. O que continua de fora e' o
+// que interessa a um atacante: chaves do JARVIS, do Ollama, do Tavily e o
+// token do backend local — nenhuma delas serve para autenticar essas CLIs.
+const ENV_DELEGACAO = [
+  'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'ProgramFiles', 'ProgramFiles(x86)', 'ProgramW6432',
+  'SystemDrive', 'USERNAME', 'USERDOMAIN', 'PUBLIC', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME',
+  'LANG', 'LC_ALL', 'TZ',
+];
+
+function pickEnv(chaves) {
   const env = {};
-  for (const chave of permitidas) {
+  for (const chave of chaves) {
     if (process.env[chave] !== undefined) env[chave] = process.env[chave];
   }
   return env;
+}
+
+function sanitizedEnv() {
+  return pickEnv(ENV_BASE);
+}
+
+/** Ambiente para delegar a uma CLI de agente, sem herdar segredos do JARVIS. */
+function delegateEnv() {
+  return { ...pickEnv(ENV_BASE), ...pickEnv(ENV_DELEGACAO) };
 }
 
 // No Windows, matar o pai deixa os filhos rodando. taskkill /T percorre a
@@ -239,6 +265,7 @@ module.exports = {
   appendAudit,
   classify,
   decide,
+  delegateEnv,
   hasChaining,
   isSafeRead,
   killTree,

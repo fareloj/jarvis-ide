@@ -268,6 +268,11 @@ const DELEGATE_TIMEOUT_MS = 5 * 60_000;
 const DELEGATE_BINARIES = { 'claude-code': 'claude', codex: 'codex', antigravity: 'agy' };
 const DELEGATE_LABELS = { 'claude-code': 'Claude Code', codex: 'Codex CLI', antigravity: 'Antigravity CLI' };
 
+// O ambiente entregue a essas CLIs é montado por commandPolicy.delegateEnv():
+// mantém o perfil do usuário (é onde Claude Code, Codex e Antigravity guardam
+// a sessão já autenticada) e deixa de fora as chaves do JARVIS, do Ollama, do
+// Tavily e o token do backend local.
+//
 // Roda outro agente de codificação em modo não-interativo (headless), igual
 // scripts/CI fariam. Cada CLI tem sua própria sintaxe pra isso — nenhuma tem
 // SDK Node embutido aqui, então chamamos o binário via subprocesso, como já
@@ -285,7 +290,12 @@ function runCli(binary, args, { cwd, timeoutMs }) {
   return new Promise((resolve, reject) => {
     let child;
     try {
-      child = spawn(binary, args, { cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawn(binary, args, {
+        cwd,
+        env: commandPolicy.delegateEnv(),
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
     } catch (error) {
       reject(error);
       return;

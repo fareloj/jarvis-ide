@@ -77,6 +77,35 @@ test('o ambiente não herda segredos do processo', () => {
   delete process.env.OLLAMA_API_KEY;
 });
 
+test('a delegação preserva o perfil do usuário e continua sem os segredos', () => {
+  process.env.JARVIS_TAVILY_API_KEY = 'tvly-segredo-de-teste';
+  process.env.OLLAMA_API_KEY = 'chave-secreta';
+  process.env.JARVIS_BACKEND_TOKEN = 'token-do-backend';
+  const original = process.env.APPDATA;
+  process.env.APPDATA = original || 'C:\Users\teste\AppData\Roaming';
+
+  const env = policy.delegateEnv();
+
+  // Sem o perfil do usuário, a CLI já autenticada volta a pedir login.
+  assert.ok(env.APPDATA, 'APPDATA precisa chegar à CLI delegada');
+  assert.ok(env.PATH || env.Path, 'PATH precisa sobreviver');
+  assert.equal(env.USERPROFILE, process.env.USERPROFILE);
+
+  // Mas nenhum segredo do JARVIS acompanha a delegação.
+  assert.equal(env.JARVIS_TAVILY_API_KEY, undefined);
+  assert.equal(env.OLLAMA_API_KEY, undefined);
+  assert.equal(env.JARVIS_BACKEND_TOKEN, undefined);
+  for (const chave of Object.keys(env)) {
+    assert.equal(/^(JARVIS_|OLLAMA_)/.test(chave), false, `variável indevida: ${chave}`);
+  }
+
+  delete process.env.JARVIS_TAVILY_API_KEY;
+  delete process.env.OLLAMA_API_KEY;
+  delete process.env.JARVIS_BACKEND_TOKEN;
+  if (original === undefined) delete process.env.APPDATA;
+  else process.env.APPDATA = original;
+});
+
 test('a auditoria sobrevive à reinicialização', async () => {
   await policy.appendAudit({ quando: new Date().toISOString(), comando: 'git status', classe: 'leitura', status: 'ok' });
   // Releitura a partir do disco, como faria um processo recém-iniciado.
