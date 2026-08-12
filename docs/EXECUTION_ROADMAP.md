@@ -2,6 +2,16 @@
 
 Este documento transforma as pendências do projeto em tarefas sequenciais. A regra é simples: **execute somente uma tarefa por vez**. A próxima tarefa só começa depois que a atual cumprir todos os critérios de aceite, passar nos testes e receber um commit próprio.
 
+## Divisão de responsabilidade
+
+O trabalho foi dividido em duas fases sequenciais para impedir que Codex e Claude Code editem a mesma base simultaneamente:
+
+- **Fase A — Claude Code:** tarefas 0 a 6, trabalhando exclusivamente na branch `claude/foundation-phase`.
+- **Gate de integração — Codex:** revisão completa dos commits do Claude, execução dos testes, correções necessárias e merge validado na `main`.
+- **Fase B — Codex:** tarefas 7 a 14, iniciadas somente depois que a Fase A estiver integrada e estável.
+
+O Claude não deve trabalhar diretamente na `main`, fazer push, abrir PR ou realizar o merge final. O Codex é responsável por validar a entrega completa da Fase A e integrá-la. O prompt operacional do Claude está em [`CLAUDE_CODE_FOUNDATION_PROMPT.md`](CLAUDE_CODE_FOUNDATION_PROMPT.md).
+
 ## Protocolo de trabalho
 
 Para cada tarefa:
@@ -15,31 +25,38 @@ Para cada tarefa:
 7. Crie um commit técnico e marque a tarefa como `CONCLUÍDA`.
 8. Só então avance para a tarefa seguinte.
 
+Além disso, cada agente deve permanecer na branch atribuída à sua fase. Um commit deve representar uma tarefa ou uma correção coesa e nunca misturar duas tarefas do roadmap.
+
 Não misture refatorações oportunistas, mudanças visuais e funcionalidades não relacionadas. Se surgir um problema fora do escopo, registre-o em “Pendências descobertas” e continue a tarefa atual.
 
 ## Estado geral
 
-| Ordem | Tarefa | Estado | Dependência |
-|---:|---|---|---|
-| 0 | Unificar o histórico Git | PENDENTE | — |
-| 1 | Estabelecer CI e baseline do repositório | PENDENTE | 0 |
-| 2 | Autenticar o backend local | PENDENTE | 1 |
-| 3 | Criar escrita e patch estruturados | PENDENTE | 2 |
-| 4 | Endurecer terminal e execução de processos | PENDENTE | 3 |
-| 5 | Transformar o visualizador em editor | PENDENTE | 3 |
-| 6 | Implementar integração Git e Diff | PENDENTE | 5 |
-| 7 | Implementar terminal interativo PTY | PENDENTE | 4 |
-| 8 | Implementar Problems e busca global | PENDENTE | 5 |
-| 9 | Robustecer o runtime agentic | PENDENTE | 4 |
-| 10 | Completar o sistema de skills | PENDENTE | 9 |
-| 11 | Melhorar ciclo de vida do RAG | PENDENTE | 9 |
-| 12 | Completar gerenciamento de memória | PENDENTE | 11 |
-| 13 | Criar testes end-to-end do Electron | PENDENTE | 5–12 |
-| 14 | Empacotar e publicar o aplicativo | PENDENTE | 13 |
+| Ordem | Tarefa | Responsável | Fase | Estado | Dependência |
+|---:|---|---|---|---|---|
+| 0 | Unificar o histórico Git | Claude Code | A | PENDENTE | — |
+| 1 | Estabelecer CI e baseline do repositório | Claude Code | A | PENDENTE | 0 |
+| 2 | Autenticar o backend local | Claude Code | A | PENDENTE | 1 |
+| 3 | Criar escrita e patch estruturados | Claude Code | A | PENDENTE | 2 |
+| 4 | Endurecer terminal e execução de processos | Claude Code | A | PENDENTE | 3 |
+| 5 | Transformar o visualizador em editor | Claude Code | A | PENDENTE | 3–4 |
+| 6 | Implementar integração Git e Diff | Claude Code | A | PENDENTE | 5 |
+| Gate | Revisar e integrar a Fase A na `main` | Codex | Integração | PENDENTE | 0–6 |
+| 7 | Implementar terminal interativo PTY | Codex | B | PENDENTE | Gate |
+| 8 | Implementar Problems e busca global | Codex | B | PENDENTE | 7 |
+| 9 | Robustecer o runtime agentic | Codex | B | PENDENTE | 7–8 |
+| 10 | Completar o sistema de skills | Codex | B | PENDENTE | 9 |
+| 11 | Melhorar ciclo de vida do RAG | Codex | B | PENDENTE | 9 |
+| 12 | Completar gerenciamento de memória | Codex | B | PENDENTE | 11 |
+| 13 | Criar testes end-to-end do Electron | Codex | B | PENDENTE | 7–12 |
+| 14 | Empacotar e publicar o aplicativo | Codex | B | PENDENTE | 13 |
 
 Estados permitidos: `PENDENTE`, `EM ANDAMENTO`, `BLOQUEADA` e `CONCLUÍDA`.
 
 ---
+
+## Fase A — Claude Code
+
+O Claude executa as tarefas 0–6 em ordem, na branch `claude/foundation-phase`. Ao concluir a Tarefa 6, deve parar e entregar o relatório solicitado no prompt operacional. Ele não inicia tarefas da Fase B.
 
 ## Tarefa 0 — Unificar o histórico Git
 
@@ -216,6 +233,23 @@ Transformar a aba Diff em uma visão real das alterações do projeto.
 - [ ] Repositório inexistente ou em estado de merge possui mensagem clara.
 
 ---
+
+## Gate de integração — Codex
+
+Antes da Tarefa 7, o Codex deve:
+
+1. inspecionar todos os commits da branch `claude/foundation-phase`;
+2. comparar cada implementação com os critérios de aceite das tarefas 0–6;
+3. revisar especialmente autenticação, path traversal, symlinks, processos filhos, segredos e aprovação concorrente;
+4. executar syntax check, testes unitários, testes de integração e verificações manuais do Electron;
+5. corrigir regressões na branch de integração com commits separados;
+6. atualizar o roadmap e o diário de execução;
+7. fazer o merge validado na `main`;
+8. confirmar que a `main` está limpa e estável antes de começar a Fase B.
+
+## Fase B — Codex
+
+As tarefas abaixo pertencem ao Codex e só começam depois da conclusão do gate de integração.
 
 ## Tarefa 7 — Implementar terminal interativo PTY
 
