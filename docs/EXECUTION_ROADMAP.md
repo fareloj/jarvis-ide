@@ -154,6 +154,17 @@ Permitir que o agente altere arquivos sem depender de PowerShell ou de um CLI ex
 - [x] Alteração concorrente gera conflito em vez de sobrescrita.
 - [x] Diff exibido corresponde exatamente ao conteúdo aplicado.
 - [x] Criar, atualizar, recusar e desfazer possuem testes.
+- [x] O caminho aprovado é revalidado no instante da gravação.
+- [x] Patch de vários arquivos é transacional.
+- [x] Arquivo recém-criado pode ser desfeito.
+- [x] A gravação é atômica.
+
+### Reabertura após o gate (corrigida em 2026-08-12)
+
+O gate apontou quatro bloqueadores: a checagem de symlink/junction acontecia apenas no
+planejamento, patches de vários arquivos deixavam meia mudança aplicada, arquivos
+criados não tinham desfazer e a gravação truncava o arquivo antes de escrever.
+Todos foram corrigidos em commits separados (`fix(tools): ...`).
 
 ---
 
@@ -181,6 +192,22 @@ Substituir “PowerShell iniciado no workspace” por uma fronteira de execuçã
 - [x] Segredos de ambiente não são herdados por padrão.
 - [x] Auditoria sobrevive à reinicialização.
 - [x] Testes cobrem escape, timeout, recusa e cancelamento.
+- [x] Nenhum comando de terminal executa sem aprovação humana.
+- [x] CLIs delegadas recebem ambiente saneado sem perder a autenticação local.
+- [x] Timeout e cancelamento da delegação encerram a árvore de processos.
+- [x] A auditoria não persiste credenciais.
+
+### Reabertura após o gate (corrigida em 2026-08-12)
+
+O gate apontou quatro bloqueadores: a allowlist liberava execução automática com
+base no texto do comando, as CLIs delegadas herdavam o ambiente inteiro do
+Electron (inclusive chaves de API), o encerramento da delegação matava apenas o
+processo pai e a auditoria gravava o comando cru, com segredos. Todos foram
+corrigidos em commits separados (`fix(execution): ...`).
+
+A decisão de segurança: texto de comando não prova efeito. Qualquer liberação
+automática só volta a ser discutida quando houver confinamento verificável de
+caminhos e efeitos (sandbox ou runner dedicado), o que pertence à Fase B.
 
 ---
 
@@ -463,6 +490,8 @@ Registre aqui problemas encontrados durante uma tarefa sem interromper o escopo 
 
 | Data | Tarefa | Resultado | Testes | Commit | Observações |
 |---|---:|---|---|---|---|
+| 2026-08-12 | 4 | Correção dos bloqueadores do gate | 96/96 (7 novos) | 4 commits `fix(execution): ...` | Aprovação volta a ser obrigatória em todo `terminal_run`; ambiente das CLIs delegadas saneado por allowlist; `killTree` + `AbortSignal` na delegação, verificados com processo neto real; segredos redigidos antes da auditoria. |
+| 2026-08-12 | 3 | Correção dos bloqueadores do gate | 92/92 (5 novos) | 4 commits `fix(tools): ...` | Revalidação de caminho na gravação (teste troca diretório por junction entre plano e aplicação); patch transacional; desfazer criação por hash; gravação atômica por rename. |
 | 2026-08-12 | 4 | Política de comandos, ambiente saneado e kill de árvore | 84/84 (9 novos) | `feat(execution): isolate terminal processes` | Timeout e cancelamento verificados com processo real gerando neto. Sandbox de SO avaliada e recusada; decisão documentada. |
 | 2026-08-12 | 3 | `project_write_file` e `project_apply_patch` com plano congelado | 75/75 (9 novos) | `feat(tools): add approval-gated file patches` | Symlink barrado por realpath; junction criada de verdade no teste. |
 | 2026-08-12 | 2 | Backend autenticado por token efêmero | 66/66 (6 novos de auth) | `feat(security): authenticate local backend requests` | Verificação manual: rota privada 401, health 200, token ausente dos logs. |
