@@ -87,6 +87,26 @@ function hashOf(conteudo) {
   return crypto.createHash('sha256').update(conteudo ?? '', 'utf8').digest('hex');
 }
 
+// Escrita atomica: grava num temporario ao lado do destino e troca por
+// rename. fs.writeFile direto trunca o arquivo antes de escrever — uma queda
+// de energia, um erro de disco ou o proprio processo morrendo no meio deixam
+// o arquivo do usuario truncado ou vazio. Com rename, quem le ve' o conteudo
+// antigo inteiro ou o novo inteiro, nunca um estado intermediario. O
+// temporario fica no mesmo diretorio para que o rename seja no mesmo volume.
+async function writeAtomic(alvo, conteudo) {
+  const temporario = path.join(
+    path.dirname(alvo),
+    `.jarvis-tmp-${crypto.randomBytes(8).toString('hex')}`,
+  );
+  try {
+    await fs.writeFile(temporario, conteudo, 'utf8');
+    await fs.rename(temporario, alvo);
+  } catch (error) {
+    await fs.rm(temporario, { force: true });
+    throw error;
+  }
+}
+
 async function readIfExists(alvo) {
   try {
     return await fs.readFile(alvo, 'utf8');
@@ -241,7 +261,7 @@ async function applyWrite(plano) {
 
   const backupId = await backup(plano);
   await fs.mkdir(path.dirname(plano.alvo), { recursive: true });
-  await fs.writeFile(plano.alvo, plano.conteudo, 'utf8');
+  await writeAtomic(plano.alvo, plano.conteudo);
   return { path: plano.path, tipo: plano.tipo, backupId, hash: plano.hashNovo };
 }
 
@@ -270,7 +290,7 @@ async function undoWrite(backupId) {
   }
 
   const conteudo = await fs.readFile(path.join(BACKUP_ROOT, `${backupId}.bak`), 'utf8');
-  await fs.writeFile(meta.alvo, conteudo, 'utf8');
+  await writeAtomic(meta.alvo, conteudo);
   return { path: meta.path, restaurado: true, removido: false };
 }
 
@@ -303,4 +323,5 @@ module.exports = {
   resolveWritableTarget,
   undoWrite,
   unifiedDiff,
+  writeAtomic,
 };

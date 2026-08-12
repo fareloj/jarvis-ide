@@ -194,6 +194,29 @@ test('desfazer apaga arquivo criado somente se o hash ainda for o aplicado', asy
   await fs.rm(raiz, { recursive: true, force: true });
 });
 
+test('a gravação é atômica e não deixa arquivo temporário para trás', async () => {
+  const raiz = await projetoTemporario();
+  const arquivo = path.join(raiz, 'atomico.txt');
+  await fs.writeFile(arquivo, 'antigo', 'utf8');
+
+  const plano = await fileWrite.planWrite({ projectPath: raiz, path: 'atomico.txt', content: 'novo conteúdo' });
+  await fileWrite.applyWrite(plano);
+
+  assert.equal(await fs.readFile(arquivo, 'utf8'), 'novo conteúdo');
+  const restos = (await fs.readdir(raiz)).filter((nome) => nome.startsWith('.jarvis-tmp-'));
+  assert.deepEqual(restos, [], 'nenhum temporário pode sobrar após a gravação');
+
+  // Falha no meio do caminho também não pode deixar sujeira nem destruir o
+  // arquivo já existente: o destino é um diretório, então o rename falha.
+  await fs.mkdir(path.join(raiz, 'pasta'));
+  await assert.rejects(fileWrite.writeAtomic(path.join(raiz, 'pasta'), 'x'));
+  const restosApos = (await fs.readdir(raiz)).filter((nome) => nome.startsWith('.jarvis-tmp-'));
+  assert.deepEqual(restosApos, [], 'o temporário é removido quando a gravação falha');
+  assert.equal(await fs.readFile(arquivo, 'utf8'), 'novo conteúdo');
+
+  await fs.rm(raiz, { recursive: true, force: true });
+});
+
 test('patch limita a quantidade de arquivos por operação', async () => {
   const raiz = await projetoTemporario();
   const demais = Array.from({ length: fileWrite.MAX_FILES_PER_OPERATION + 1 }, (_, i) => ({
