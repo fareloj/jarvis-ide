@@ -1,0 +1,10 @@
+rag-workspace/*
+!rag-workspace/.gitkeep
+notes/*
+!notes/.gitkeep
+memory/*
+!memory/.gitkeep
+conversation-memory/*
+!conversation-memory/.gitkeep
+usage/*
+!usage/.gitkeep

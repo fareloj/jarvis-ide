@@ -1,7 +1,0 @@
-rag-workspace/*
-!rag-workspace/.gitkeep
-notes/*
-!notes/.gitkeep
-memory/*
-!memory/.gitkeep
-
