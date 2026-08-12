@@ -1577,7 +1577,19 @@ function appendApprovalEvent(requestId, approval = {}) {
   const card = document.createElement('div');
   card.className = 'approval-card';
   card.dataset.requestId = requestId;
-  card.innerHTML = `<div><i class="ph-duotone ph-shield-warning"></i><span><strong>Aprovação necessária · ${escapeHtml(approval.name || 'tool')}</strong><small>${escapeHtml(JSON.stringify(approval.args || {}))}</small></span></div>
+  // Escrita traz o diff exato que sera' gravado; as demais tools mostram os
+  // argumentos crus. Sem o diff, aprovar escrita seria assinar em branco.
+  const resumo = approval.resumo?.length
+    ? escapeHtml(approval.resumo.join(' · '))
+    : escapeHtml(JSON.stringify(approval.args || {}));
+  const diffHtml = approval.diff
+    ? `<pre class="approval-diff">${approval.diff.split(/\r?\n/).map((linha) => {
+      const classe = linha.startsWith('+++') || linha.startsWith('---') ? 'diff-meta'
+        : linha.startsWith('+') ? 'diff-add' : linha.startsWith('-') ? 'diff-del' : '';
+      return `<span class="${classe}">${escapeHtml(linha)}</span>`;
+    }).join('\n')}</pre>`
+    : '';
+  card.innerHTML = `<div><i class="ph-duotone ph-shield-warning"></i><span><strong>Aprovação necessária · ${escapeHtml(approval.name || 'tool')}</strong><small>${resumo}</small></span></div>${diffHtml}
     <div class="approval-actions"><button class="button compact secondary" data-approval-id="${escapeHtml(approval.id)}" data-approved="false">Recusar</button><button class="button compact primary" data-approval-id="${escapeHtml(approval.id)}" data-approved="true">Aprovar</button></div>`;
   // Mesma regra dos cards de tool: entra abaixo do que o modelo já disse,
   // e acima do "pensando…" quando ele ainda estiver visível.

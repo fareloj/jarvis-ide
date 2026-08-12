@@ -6,6 +6,7 @@ const { promisify } = require('node:util');
 const rag = require('./rag-client');
 const { listMemories, saveMemory } = require('./memory-store');
 const { searchWeb } = require('./web-search');
+const fileWrite = require('./file-write');
 
 const execFileAsync = promisify(execFile);
 const pendingApprovals = new Map();
@@ -99,6 +100,45 @@ const DEFINITIONS = Object.freeze([
           kind: { type: 'string', enum: ['context', 'decision', 'preference', 'requirement'] },
         },
         required: ['title', 'content'],
+      },
+    },
+    policy: { risk: 'write', approval: 'always' },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'project_write_file',
+      description: 'Cria ou substitui um arquivo de texto dentro do projeto aberto. Mostra o diff e exige aprovação antes de gravar.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Caminho relativo ao projeto.' },
+          content: { type: 'string', description: 'Conteúdo completo final do arquivo.' },
+        },
+        required: ['path', 'content'],
+      },
+    },
+    policy: { risk: 'write', approval: 'always' },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'project_apply_patch',
+      description: 'Aplica alterações em vários arquivos do projeto numa única operação aprovada. Mostra o diff completo antes de gravar.',
+      parameters: {
+        type: 'object',
+        properties: {
+          files: {
+            type: 'array',
+            description: 'Arquivos a criar ou substituir.',
+            items: {
+              type: 'object',
+              properties: { path: { type: 'string' }, content: { type: 'string' } },
+              required: ['path', 'content'],
+            },
+          },
+        },
+        required: ['files'],
       },
     },
     policy: { risk: 'write', approval: 'always' },
@@ -358,17 +398,47 @@ async function runTool(name, args = {}, context = {}) {
     return { stdout, stderr, exitCode: 0 };
   }
   if (name === 'delegate_coding_task') return delegateCodingTask(projectPath, args.agent, args.prompt);
+  // As tools de escrita nunca chegam aqui pelo caminho normal: elas sao
+  // aplicadas a partir do plano congelado em resolveApproval. Este ramo
+  // existe para recusar uma chamada direta sem aprovacao.
+  if (name === 'project_write_file' || name === 'project_apply_patch') {
+    throw new Error('Escrita exige aprovação explícita do usuário.');
+  }
   throw new Error(`Tool desconhecida: ${name}`);
+}
+
+// Calcula o efeito da escrita antes de pedir aprovacao. O plano fica
+// congelado no pedido: o que o usuario ve' no diff e' exatamente o que sera'
+// gravado, e nada toca no disco ate' a aprovacao.
+async function planIfWrite(name, args, context) {
+  if (name === 'project_write_file') {
+    return fileWrite.planPatch({ projectPath: context.projectPath, files: [{ path: args.path, content: args.content }] });
+  }
+  if (name === 'project_apply_patch') {
+    return fileWrite.planPatch({ projectPath: context.projectPath, files: args.files });
+  }
+  return null;
 }
 
 async function requestTool(name, args, context) {
   const definition = toolDefinition(name);
   if (!definition) throw new Error(`Tool desconhecida: ${name}`);
   if (definition.policy.approval === 'never') return { status: 'completed', result: await runTool(name, args, context) };
+
+  const plano = await planIfWrite(name, args, context);
   const id = `approval-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  pendingApprovals.set(id, { id, name, args, context, createdAt: Date.now() });
+  pendingApprovals.set(id, { id, name, args, context, plano, createdAt: Date.now() });
   setTimeout(() => pendingApprovals.delete(id), 10 * 60_000).unref?.();
-  return { status: 'approval_required', approval: { id, name, args, risk: definition.policy.risk } };
+  return {
+    status: 'approval_required',
+    approval: {
+      id,
+      name,
+      args,
+      risk: definition.policy.risk,
+      ...(plano ? { diff: plano.diff, resumo: plano.resumo } : {}),
+    },
+  };
 }
 
 async function resolveApproval(id, approved) {
@@ -376,10 +446,17 @@ async function resolveApproval(id, approved) {
   if (!pending) throw new Error('Aprovação inexistente ou expirada.');
   pendingApprovals.delete(pending.id);
   if (!approved) return { status: 'denied', name: pending.name };
+
+  if (pending.plano) {
+    const aplicados = [];
+    for (const plano of pending.plano.planos) aplicados.push(await fileWrite.applyWrite(plano));
+    return { status: 'completed', name: pending.name, result: { arquivos: aplicados } };
+  }
   return { status: 'completed', name: pending.name, result: await runTool(pending.name, pending.args, pending.context) };
 }
 
 module.exports = {
-  delegateCodingTask, describeTools, listProjectDirectory, previewProjectFile, publicDefinitions,
+  delegateCodingTask,
+  fileWrite, describeTools, listProjectDirectory, previewProjectFile, publicDefinitions,
   requestTool, resolveApproval, resolveProjectTarget, runTool,
 };

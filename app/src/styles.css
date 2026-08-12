@@ -721,6 +721,12 @@ kbd { padding: 1px 4px; border: 1px solid var(--line); border-bottom-width: 2px;
 .quota-compact-fill.danger { background: var(--quota-danger) !important; }
 .full-width { width: 100%; justify-content: center; }
 
+.approval-diff { max-height: 260px; margin: 8px 0 0; padding: 9px 11px; overflow: auto; border-radius: 7px; background: var(--terminal); color: #d8d4d0; font: 10.5px/1.55 var(--font-mono); white-space: pre; }
+.approval-diff span { display: block; }
+.approval-diff .diff-add { color: #9fd88f; }
+.approval-diff .diff-del { color: #ff9b93; }
+.approval-diff .diff-meta { color: #8a8681; }
+
 .confirm-dialog { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; width: 420px; max-width: calc(100vw - 40px); padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper-raised); box-shadow: 0 18px 44px rgba(32, 30, 29, 0.22); animation: popover-in 160ms cubic-bezier(0.16, 1, 0.3, 1); }
 .confirm-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .confirm-head strong { font-family: var(--font-editorial); font-size: 17px; color: var(--ink-1); }

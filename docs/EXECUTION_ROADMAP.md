@@ -36,7 +36,7 @@ Não misture refatorações oportunistas, mudanças visuais e funcionalidades n�
 | 0 | Unificar o histórico Git | Claude Code | A | CONCLUÍDA | — |
 | 1 | Estabelecer CI e baseline do repositório | Claude Code | A | CONCLUÍDA | 0 |
 | 2 | Autenticar o backend local | Claude Code | A | CONCLUÍDA | 1 |
-| 3 | Criar escrita e patch estruturados | Claude Code | A | PENDENTE | 2 |
+| 3 | Criar escrita e patch estruturados | Claude Code | A | CONCLUÍDA | 2 |
 | 4 | Endurecer terminal e execução de processos | Claude Code | A | PENDENTE | 3 |
 | 5 | Transformar o visualizador em editor | Claude Code | A | PENDENTE | 3–4 |
 | 6 | Implementar integração Git e Diff | Claude Code | A | PENDENTE | 5 |
@@ -149,11 +149,11 @@ Permitir que o agente altere arquivos sem depender de PowerShell ou de um CLI ex
 
 ### Critérios de aceite
 
-- [ ] Path traversal e links simbólicos para fora são recusados.
-- [ ] Nenhum arquivo muda antes da aprovação.
-- [ ] Alteração concorrente gera conflito em vez de sobrescrita.
-- [ ] Diff exibido corresponde exatamente ao conteúdo aplicado.
-- [ ] Criar, atualizar, recusar e desfazer possuem testes.
+- [x] Path traversal e links simbólicos para fora são recusados.
+- [x] Nenhum arquivo muda antes da aprovação.
+- [x] Alteração concorrente gera conflito em vez de sobrescrita.
+- [x] Diff exibido corresponde exatamente ao conteúdo aplicado.
+- [x] Criar, atualizar, recusar e desfazer possuem testes.
 
 ---
 
@@ -463,6 +463,7 @@ Registre aqui problemas encontrados durante uma tarefa sem interromper o escopo 
 
 | Data | Tarefa | Resultado | Testes | Commit | Observações |
 |---|---:|---|---|---|---|
+| 2026-08-12 | 3 | `project_write_file` e `project_apply_patch` com plano congelado | 75/75 (9 novos) | `feat(tools): add approval-gated file patches` | Symlink barrado por realpath; junction criada de verdade no teste. |
 | 2026-08-12 | 2 | Backend autenticado por token efêmero | 66/66 (6 novos de auth) | `feat(security): authenticate local backend requests` | Verificação manual: rota privada 401, health 200, token ausente dos logs. |
 | 2026-08-12 | 1 | CI Windows/Node 20 + documentos de contribuição | `ci` simulado em clone limpo: 60/60 | `ci: add Windows validation workflow` | Validado com `npm ci` real em clone novo. README corrigido de 46 para 60 testes. |
 | 2026-08-12 | 0 | Histórico unificado em `claude/foundation-phase` | `check` OK, 60/60 | merges `origin/main` + `c/continuous-skill-review` | Sem conflitos: a linha do roadmap só continha commits de documentação desde o ancestral `7673b5b`. |
