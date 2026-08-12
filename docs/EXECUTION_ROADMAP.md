@@ -34,7 +34,7 @@ Não misture refatorações oportunistas, mudanças visuais e funcionalidades n�
 | Ordem | Tarefa | Responsável | Fase | Estado | Dependência |
 |---:|---|---|---|---|---|
 | 0 | Unificar o histórico Git | Claude Code | A | CONCLUÍDA | — |
-| 1 | Estabelecer CI e baseline do repositório | Claude Code | A | PENDENTE | 0 |
+| 1 | Estabelecer CI e baseline do repositório | Claude Code | A | CONCLUÍDA | 0 |
 | 2 | Autenticar o backend local | Claude Code | A | PENDENTE | 1 |
 | 3 | Criar escrita e patch estruturados | Claude Code | A | PENDENTE | 2 |
 | 4 | Endurecer terminal e execução de processos | Claude Code | A | PENDENTE | 3 |
@@ -99,11 +99,11 @@ Fazer cada alteração futura passar por uma verificação automática reproduz�
 
 ### Critérios de aceite
 
-- [ ] Workflow executa em push e pull request.
-- [ ] O workflow passa em uma cópia limpa do repositório.
-- [ ] Nenhum teste exige Ollama, Docker ou chave externa.
-- [ ] README e badges refletem o estado real.
-- [ ] Falha de teste impede a aprovação do workflow.
+- [x] Workflow executa em push e pull request.
+- [x] O workflow passa em uma cópia limpa do repositório.
+- [x] Nenhum teste exige Ollama, Docker ou chave externa.
+- [x] README e badges refletem o estado real.
+- [x] Falha de teste impede a aprovação do workflow.
 
 ---
 
@@ -463,6 +463,7 @@ Registre aqui problemas encontrados durante uma tarefa sem interromper o escopo 
 
 | Data | Tarefa | Resultado | Testes | Commit | Observações |
 |---|---:|---|---|---|---|
+| 2026-08-12 | 1 | CI Windows/Node 20 + documentos de contribuição | `ci` simulado em clone limpo: 60/60 | `ci: add Windows validation workflow` | Validado com `npm ci` real em clone novo. README corrigido de 46 para 60 testes. |
 | 2026-08-12 | 0 | Histórico unificado em `claude/foundation-phase` | `check` OK, 60/60 | merges `origin/main` + `c/continuous-skill-review` | Sem conflitos: a linha do roadmap só continha commits de documentação desde o ancestral `7673b5b`. |
 
 ## Definição de conclusão do roadmap

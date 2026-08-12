@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest a capability or an improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation you run into, not only the solution you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like it to do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Security boundaries
+      description: See CONTRIBUTING.md. Tick the ones your idea touches, so they get designed in from the start.
+      options:
+        - label: It would write files or execute commands (requires approval)
+        - label: It would bring external content into the model context
+        - label: It would add a dependency

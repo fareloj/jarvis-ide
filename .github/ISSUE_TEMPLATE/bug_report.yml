@@ -1,0 +1,45 @@
+name: Bug report
+description: Something behaves differently from what it should
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a project at ...
+        2. Ask the agent to ...
+        3. Approve the tool call
+        4. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v0.1.0 or the commit hash
+    validations:
+      required: true
+  - type: dropdown
+    id: services
+    attributes:
+      label: Which optional services were running?
+      multiple: true
+      options:
+        - Ollama (local)
+        - Ollama Cloud
+        - Hybrid RAG Engine
+        - None
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Output from the launcher window or the Logs tab. Remove API keys before pasting.
+      render: shell

@@ -4,6 +4,9 @@
   "private": true,
   "description": "JARVIS agentic development environment",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",

@@ -9,7 +9,8 @@ Local models through Ollama · tools that ask before they act · project RAG · 
 [![Electron](https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white)](https://electronjs.org)
 [![Node](https://img.shields.io/badge/Node.js-20%2B-5FA04E?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Ollama](https://img.shields.io/badge/Ollama-local%20%2B%20cloud-000000?logo=ollama&logoColor=white)](https://ollama.com)
-[![Tests](https://img.shields.io/badge/tests-46%20passing-3fb950)](#development)
+[![CI](https://github.com/fareloj/jarvis-ide/actions/workflows/ci.yml/badge.svg)](https://github.com/fareloj/jarvis-ide/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-60%20passing-3fb950)](#development)
 [![Status](https://img.shields.io/badge/status-early%20development-orange)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -202,12 +203,16 @@ Found something? Open an issue.
 
 ```bash
 npm run check   # syntax check across main, preload, backend and renderer
-npm test        # 46 tests, no external services required
+npm test        # 60 tests, no external services required
 npm start       # run the app
 ```
 
 Tests use only the Node built-in runner — no framework, no mocking library. Anything that reaches
 the network is stubbed, so the suite runs offline.
+
+CI runs both commands on `windows-latest` with Node 20 from a clean `npm ci`, on every push and pull
+request. See [CONTRIBUTING.md](CONTRIBUTING.md) for what a change has to satisfy, and
+[SECURITY.md](SECURITY.md) for the threat model.
 
 ## Project structure
 
