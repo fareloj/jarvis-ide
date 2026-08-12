@@ -36,15 +36,26 @@ test('comando encadeado nunca entra na allowlist', () => {
   }
 });
 
-test('leitura pura dispensa aprovação; o resto exige', () => {
-  for (const cmd of ['ls', 'git status', 'git log --oneline', 'node --version', 'pwd']) {
-    const d = policy.decide(cmd);
-    assert.equal(d.exigeAprovacao, false, `deveria liberar: ${cmd}`);
-  }
-  for (const cmd of ['rm -rf build', 'npm install left-pad', 'mkdir x', 'npm test']) {
+test('todo comando exige aprovação, inclusive leitura reconhecida', () => {
+  // Enquanto nao houver prova de que caminhos e efeitos ficam dentro do
+  // workspace, nem `ls` roda sozinho: o texto do comando nao prova o efeito.
+  const comandos = [
+    'ls', 'git status', 'git log --oneline', 'node --version', 'pwd',
+    'cat C:/Users/alguem/.ssh/id_rsa',
+    'rm -rf build', 'npm install left-pad', 'mkdir x', 'npm test',
+  ];
+  for (const cmd of comandos) {
     const d = policy.decide(cmd);
     assert.equal(d.exigeAprovacao, true, `deveria exigir aprovação: ${cmd}`);
   }
+});
+
+test('a allowlist continua descrita, mas desligada por padrão', () => {
+  // isSafeRead segue valendo para rotular o comando; ligar a liberacao
+  // automatica precisa ser um ato explicito, e nenhum chamador faz isso.
+  assert.equal(policy.isSafeRead('git status'), true);
+  assert.equal(policy.decide('git status').exigeAprovacao, true);
+  assert.equal(policy.decide('git status', { allowSafeReads: true }).exigeAprovacao, false);
 });
 
 test('comando vazio ou gigante é recusado', () => {

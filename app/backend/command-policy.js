@@ -60,8 +60,9 @@ const CLASSES = [
   },
 ];
 
-// Leitura pura: seguro o bastante para dispensar aprovacao caso a politica
-// de allowlist esteja ligada. Precisa casar o comando INTEIRO.
+// Leitura reconhecida como pura. Hoje serve apenas para rotular o comando na
+// auditoria e na tela de aprovacao: NAO existe caminho automatico de execucao
+// (ver `decide`). Precisa casar o comando INTEIRO.
 const LEITURA_SEGURA = [
   /^(ls|dir|get-childitem|gci)(\s+[^|;&><]*)?$/i,
   /^(pwd|get-location|cd)(\s+[^|;&><]*)?$/i,
@@ -94,10 +95,19 @@ function isSafeRead(command) {
 }
 
 /**
- * Decide se o comando pode rodar sem aprovacao.
- * Por padrao tudo exige aprovacao; a allowlist so' libera leitura pura.
+ * Classifica o comando e decide se ele pode rodar.
+ *
+ * `allowSafeReads` nasce desligado e nao e' ligado por nenhum chamador: todo
+ * `terminal_run` exige aprovacao humana. A allowlist casava o texto do
+ * comando, mas texto nao prova efeito — `cat` e `git log` aceitam caminhos
+ * absolutos e recebem argumentos escritos pelo modelo a partir de conteudo
+ * nao confiavel (chat, RAG, web, arquivos), e o shell resolve variaveis de
+ * ambiente e wildcards depois que a regex ja' aprovou a string. Enquanto os
+ * caminhos e efeitos de um comando nao estiverem comprovadamente confinados
+ * ao workspace, a aprovacao humana e' a unica fronteira que sustenta a
+ * afirmacao "um comando nao escapa silenciosamente do escopo autorizado".
  */
-function decide(command, { allowSafeReads = true } = {}) {
+function decide(command, { allowSafeReads = false } = {}) {
   const texto = String(command || '').trim();
   if (!texto) return { permitido: false, motivo: 'Comando vazio.', classe: 'leitura', exigeAprovacao: true };
   if (texto.length > MAX_COMMAND_LENGTH) {
@@ -105,10 +115,6 @@ function decide(command, { allowSafeReads = true } = {}) {
   }
   const classe = classify(texto);
   const encadeado = hasChaining(texto);
-  // A allowlist e' quem decide o modo automatico, nao a classe: ela exige
-  // casamento do comando inteiro e ja' recusa encadeamento. O classificador
-  // e' amplo de proposito (marca `node --version` como execucao) e serve
-  // para rotular e auditar, nao para liberar.
   const automatico = allowSafeReads && isSafeRead(texto);
   return {
     permitido: true,

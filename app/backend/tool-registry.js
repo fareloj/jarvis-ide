@@ -428,15 +428,6 @@ async function requestTool(name, args, context) {
   if (!definition) throw new Error(`Tool desconhecida: ${name}`);
   if (definition.policy.approval === 'never') return { status: 'completed', result: await runTool(name, args, context) };
 
-  // Comando de leitura pura reconhecido pela allowlist roda direto; qualquer
-  // encadeamento ou classe acima de leitura cai na aprovacao normal.
-  if (name === 'terminal_run') {
-    const decisao = commandPolicy.decide(args.command);
-    if (decisao.permitido && !decisao.exigeAprovacao) {
-      return { status: 'completed', result: await runTool(name, args, context) };
-    }
-  }
-
   const plano = await planIfWrite(name, args, context);
   const id = `approval-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   pendingApprovals.set(id, { id, name, args, context, plano, createdAt: Date.now() });

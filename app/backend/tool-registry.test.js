@@ -79,6 +79,18 @@ test('delegate_coding_task exige aprovação explícita e valida entrada', async
   await fs.rm(root, { recursive: true, force: true });
 });
 
+test('terminal_run sempre para na aprovação, mesmo em leitura pura', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-terminal-'));
+  for (const command of ['git status', 'ls', 'npm test']) {
+    const pending = await requestTool('terminal_run', { command }, { projectPath: root });
+    assert.equal(pending.status, 'approval_required', `${command} não pode rodar sozinho`);
+    assert.equal(pending.approval.name, 'terminal_run');
+    const denied = await resolveApproval(pending.approval.id, false);
+    assert.equal(denied.status, 'denied');
+  }
+  await fs.rm(root, { recursive: true, force: true });
+});
+
 test('tool de escrita exige aprovação explícita', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-tool-approval-'));
   const pending = await requestTool('memory_save', { title: 'Teste', content: 'Persistir.' }, { projectPath: root });
