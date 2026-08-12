@@ -554,8 +554,8 @@ function specialPage(type) {
         </section>
         <section class="settings-group learning-group">
           <h2>Aprendizado contínuo</h2>
-          <div class="setting-row"><span><strong>Revisar skills</strong><small>A cada três respostas, o modelo pode propor melhorias; nenhuma alteração é aplicada sem sua aprovação</small></span><button class="toggle ${state.continuousLearningEnabled ? 'on' : ''}" data-action="toggle-continuous-learning" aria-label="Alternar revisão contínua de skills"></button></div>
-          <div class="learning-toolbar"><span>Propostas persistentes com conteúdo anterior e revisado</span><button class="button compact secondary" data-action="review-skills-now"><i class="ph-duotone ph-sparkle"></i>Revisar agora</button></div>
+          <div class="setting-row"><span><strong>Revisar skills</strong><small>Correções, tools e resultados verificados podem gerar propostas; toda aplicação exige sua aprovação</small></span><button class="toggle ${state.continuousLearningEnabled ? 'on' : ''}" data-action="toggle-continuous-learning" aria-label="Alternar revisão contínua de skills"></button></div>
+          <div class="learning-toolbar"><span>Revisão rápida por evidências e curadoria determinística do ciclo de vida</span><div class="learning-actions"><button class="button compact secondary" data-action="curate-skills"><i class="ph-duotone ph-archive"></i>Curar ciclo</button><button class="button compact secondary" data-action="review-skills-now"><i class="ph-duotone ph-sparkle"></i>Revisar agora</button></div></div>
           <div id="skillReviewList" class="skill-review-list"><span class="empty-copy">Carregando revisões…</span></div>
         </section>
       </div>`;
@@ -625,9 +625,18 @@ async function loadCapabilities() {
   try {
     if (skillTarget) {
       const payload = await bridge.skills.list();
-      skillTarget.innerHTML = (payload.skills || []).map((skill) => `
-        <label class="capability-row"><span><strong>${escapeHtml(skill.name)}</strong><small>${escapeHtml(skill.description)}</small></span>
-          <input type="checkbox" data-skill-id="${escapeHtml(skill.id)}" ${state.activeSkills.includes(skill.id) ? 'checked' : ''}></label>`).join('');
+      skillTarget.innerHTML = (payload.skills || []).map((skill) => {
+        const lifecycle = skill.lifecycle || {};
+        const stateLabel = { active: 'ativa', stale: 'inativa', archived: 'arquivada' }[lifecycle.state] || 'protegida';
+        const policyAction = !lifecycle.curatorManaged
+          ? `<button class="skill-policy-action" data-skill-policy="${escapeHtml(skill.id)}" data-policy-action="adopt">Gerenciar</button>`
+          : lifecycle.state === 'archived'
+            ? `<button class="skill-policy-action" data-skill-policy="${escapeHtml(skill.id)}" data-policy-action="reactivate">Reativar</button>`
+            : `<button class="skill-policy-action" data-skill-policy="${escapeHtml(skill.id)}" data-policy-action="pin">${lifecycle.pinned ? 'Desafixar' : 'Fixar'}</button>`;
+        return `
+        <div class="capability-row"><span><strong>${escapeHtml(skill.name)}</strong><small>${escapeHtml(skill.description)} · ${escapeHtml(stateLabel)}${lifecycle.pinned ? ' · fixada' : ''}</small></span>
+          <span class="skill-policy-controls">${policyAction}<input type="checkbox" data-skill-id="${escapeHtml(skill.id)}" ${state.activeSkills.includes(skill.id) && lifecycle.state !== 'archived' ? 'checked' : ''} ${lifecycle.state === 'archived' ? 'disabled' : ''}></span></div>`;
+      }).join('');
     }
     if (toolTarget) {
       const payload = await bridge.tools.list();
@@ -644,18 +653,17 @@ async function loadCapabilities() {
 function skillReviewCard(proposal) {
   const statusLabel = { pending: 'aguardando revisão', applied: 'aplicada', rejected: 'descartada' }[proposal.status] || proposal.status;
   const confidence = Math.round((Number(proposal.confidence) || 0) * 100);
+  const evidence = proposal.evidence?.signals?.join(' · ') || 'revisão manual';
   return `<article class="skill-review-card ${escapeHtml(proposal.status)}">
     <div class="skill-review-heading">
       <span><strong>${escapeHtml(proposal.title || proposal.skillId)}</strong><small>${escapeHtml(proposal.action === 'create' ? 'nova skill' : `atualizar ${proposal.skillId}`)} · confiança ${confidence}%</small></span>
       <span class="review-status">${escapeHtml(statusLabel)}</span>
     </div>
     <p>${escapeHtml(proposal.reason || 'Sem justificativa informada.')}</p>
+    <p class="review-evidence"><i class="ph-duotone ph-detective"></i>${escapeHtml(evidence)}</p>
     <details>
-      <summary>Comparar conteúdo</summary>
-      <div class="skill-review-diff">
-        <div><span>Atual</span><pre>${escapeHtml(proposal.originalContent || '(nova skill)')}</pre></div>
-        <div><span>Proposto</span><pre>${escapeHtml(proposal.proposedContent || '')}</pre></div>
-      </div>
+      <summary>Ver diff da operação ${escapeHtml(proposal.operation || proposal.action)}</summary>
+      <div class="skill-review-diff"><pre>${escapeHtml(proposal.diff || proposal.proposedContent || '')}</pre></div>
     </details>
     ${proposal.status === 'pending' ? `<div class="skill-review-actions">
       <button class="button compact secondary" data-skill-review-id="${escapeHtml(proposal.id)}" data-review-approved="false">Descartar</button>
@@ -678,7 +686,7 @@ async function loadSkillReviews() {
   }
 }
 
-async function runSkillReview({ manual = false } = {}) {
+async function runSkillReview({ manual = false, evidence = {} } = {}) {
   if (!bridge?.skills?.review || (!manual && !state.continuousLearningEnabled)) return;
   if (state.skillReviewBusy) {
     if (manual) toast('Revisão em andamento', 'Aguarde a revisão atual terminar.');
@@ -688,8 +696,6 @@ async function runSkillReview({ manual = false } = {}) {
     toast('Resposta em andamento', 'Aguarde o modelo concluir antes de revisar as skills.', 'error');
     return;
   }
-  const assistantTurns = state.messages.filter((message) => message.role === 'assistant').length;
-  if (!manual && (assistantTurns < 3 || assistantTurns % 3 !== 0)) return;
   state.skillReviewBusy = true;
   if (manual) toast('Revisando skills', 'O modelo está procurando aprendizados procedurais nesta conversa.');
   try {
@@ -698,12 +704,14 @@ async function runSkillReview({ manual = false } = {}) {
       activeSkills: state.activeSkills,
       sessionId: state.sessionId,
       model: state.model,
+      manual,
+      evidence,
     });
     if (result.status === 'proposed') {
       toast('Nova revisão de skill', `${result.proposal.title} aguarda sua aprovação nas configurações.`);
     } else if (manual && result.status === 'no_change') {
       toast('Skills revisadas', result.reason || 'Nenhuma melhoria durável foi encontrada.');
-    } else if (manual && result.status === 'skipped') {
+    } else if (manual && ['skipped', 'cancelled'].includes(result.status)) {
       toast('Revisão adiada', result.reason);
     }
     await loadSkillReviews();
@@ -712,6 +720,39 @@ async function runSkillReview({ manual = false } = {}) {
     else log(`skills · revisão contínua indisponível: ${error.message}`);
   } finally {
     state.skillReviewBusy = false;
+  }
+}
+
+async function curateSkills() {
+  if (!bridge?.skills?.curate) return;
+  try {
+    const preview = await bridge.skills.curate({ apply: false });
+    if (!preview.changes?.length) {
+      toast('Ciclo de vida revisado', 'Nenhuma skill gerenciada precisa mudar de estado.');
+      return;
+    }
+    const result = await bridge.skills.curate({ apply: true });
+    toast('Curadoria concluída', `${result.changes.length} skill(s) mudaram de estado; nenhuma foi excluída.`);
+    await loadCapabilities();
+  } catch (error) {
+    toast('Falha na curadoria', error.message, 'error');
+  }
+}
+
+async function updateSkillPolicy(skillId, action, button) {
+  if (!bridge?.skills?.policy) return;
+  button.disabled = true;
+  try {
+    const payload = { skillId };
+    if (action === 'adopt') payload.adopt = true;
+    if (action === 'reactivate') payload.state = 'active';
+    if (action === 'pin') payload.pinned = button.textContent.trim() !== 'Desafixar';
+    await bridge.skills.policy(payload);
+    toast('Política atualizada', action === 'adopt' ? 'A skill agora pode ser administrada pelo curador.' : 'O ciclo de vida da skill foi atualizado.');
+    await loadCapabilities();
+  } catch (error) {
+    button.disabled = false;
+    toast('Falha ao atualizar skill', error.message, 'error');
   }
 }
 
@@ -1438,7 +1479,7 @@ function handleChatEvent(event = {}) {
     finishChatRequest(requestId);
     scheduleQuotaRefresh();
     maybeGenerateTitle();
-    runSkillReview();
+    runSkillReview({ evidence: event.payload?.evidence || {} });
     return;
   }
 
@@ -1918,6 +1959,11 @@ function initBottomResize() {
 }
 
 document.addEventListener('click', async (event) => {
+  const skillPolicyTarget = event.target.closest('[data-skill-policy]');
+  if (skillPolicyTarget) {
+    await updateSkillPolicy(skillPolicyTarget.dataset.skillPolicy, skillPolicyTarget.dataset.policyAction, skillPolicyTarget);
+    return;
+  }
   const closeTabTarget = event.target.closest('[data-close-tab]');
   if (closeTabTarget) {
     closeFileTab(closeTabTarget.dataset.closeTab);
@@ -2085,6 +2131,7 @@ document.addEventListener('click', async (event) => {
     );
   }
   if (action === 'review-skills-now') runSkillReview({ manual: true });
+  if (action === 'curate-skills') curateSkills();
   if (action === 'rag-refresh') checkRagHealth();
   if (action === 'rag-index') indexCurrentProject();
   if (action === 'rag-search') searchKnowledge();

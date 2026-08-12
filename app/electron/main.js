@@ -369,6 +369,22 @@ function registerIpc() {
     if (!response.ok) throw new Error(data.error || 'Falha ao resolver a revisão de skill.');
     return data;
   });
+  ipcMain.handle('skills:curate', async (_event, payload) => {
+    const response = await fetch(`${backend.url}/api/skills/curate`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao executar a curadoria de skills.');
+    return data;
+  });
+  ipcMain.handle('skills:policy', async (_event, payload) => {
+    const response = await fetch(`${backend.url}/api/skills/policy`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao atualizar a política da skill.');
+    return data;
+  });
   ipcMain.handle('tools:list', async () => {
     const response = await fetch(`${backend.url}/api/tools`);
     return response.json();

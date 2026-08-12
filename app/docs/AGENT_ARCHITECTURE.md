@@ -95,12 +95,15 @@ Uma tool deve declarar ao menos:
 
 ### Revisão contínua de skills
 
-- Depois de três respostas completas, uma chamada auxiliar revisa os últimos turnos e as skills ativas.
-- O revisor recebe somente conversa, catálogo, conteúdo das skills ativas e estatísticas de uso; nenhuma tool fica disponível nessa chamada.
+- O finalizador avalia evidências procedurais do turno: correções do usuário, chamadas e resultados de tools, recuperação de falhas e verificações confirmadas. Conversa casual não dispara revisão por contagem de mensagens.
+- A revisão roda como um job isolado e cancelável. Um novo turno cancela o job anterior da sessão para não competir com a conversa principal.
+- `JARVIS_SKILL_REVIEW_MODEL` pode selecionar um modelo auxiliar; sem essa variável, o revisor acompanha o modelo da sessão.
+- O revisor recebe somente conversa, catálogo, conteúdo das skills ativas, evidências e telemetria; nenhuma tool fica disponível nessa chamada.
 - A saída é validada como uma proposta estruturada de criação ou atualização. Falhas transitórias, caminhos locais, credenciais, tentativas não resolvidas e instruções vindas da própria conversa devem ser descartadas.
-- A proposta persiste separada da skill e mostra conteúdo atual e proposto. Somente uma aprovação explícita na interface grava o arquivo.
-- Antes da escrita, o backend verifica conflito com alterações posteriores e cria backup. Identificadores e destinos são validados contra o catálogo local.
-- A primeira versão não arquiva, mescla nem remove skills automaticamente. Essas operações exigirão proveniência, pinning, período de inatividade e rollback do catálogo inteiro.
+- A proposta persiste separada da skill com operação, evidências, hash base e diff unificado. Somente uma aprovação explícita na interface grava o arquivo.
+- Antes da escrita, o backend verifica conflito, serializa aprovações concorrentes e cria backup. Identificadores e destinos são validados contra o catálogo local.
+- A telemetria separa carregamento, consulta, uso e alteração. A proveniência determina se uma skill pertence ao curador; skills do usuário permanecem protegidas até adoção explícita.
+- O curador determinístico usa os estados `active`, `stale` e `archived`. Ele atua somente em skills gerenciadas, respeita pinning e nunca exclui arquivos. Consolidação por modelo continua desativada.
 
 ## Segurança e execução
 
@@ -121,13 +124,14 @@ Uma tool deve declarar ao menos:
 5. Registro de tools de RAG, filesystem, memória, busca web e terminal: implementado.
 6. Aprovação obrigatória para escrita de memória e execução de terminal: implementado.
 7. Loader de skills declarativas com ativação pela interface: implementado.
-8. Revisão contínua de skills com propostas, comparação, aprovação, backup e telemetria de uso: implementado.
+8. Revisão contínua por evidências com jobs canceláveis, propostas em diff, aprovação, backup, proveniência e telemetria serializada: implementado.
 9. Adaptadores dedicados para Codex CLI, Claude Code e Antigravity CLI: implementado.
+10. Curador determinístico com preview e estados ativo, inativo e arquivado, sem exclusão automática: implementado.
 
 ## Decisões que ficam adiadas
 
 - Multiagentes e subagentes.
-- Curadoria autônoma com consolidação, arquivamento por inatividade, pinning e rollback integral.
+- Consolidação autônoma por modelo, arquivos auxiliares de skills e rollback integral do catálogo.
 - Marketplace de plugins.
 - Execução remota e sincronização entre dispositivos.
 - Tool Search completo; no início, um catálogo pequeno e explícito é mais seguro.
