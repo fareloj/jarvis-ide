@@ -106,6 +106,42 @@ test('a delegação preserva o perfil do usuário e continua sem os segredos', (
   else process.env.APPDATA = original;
 });
 
+test('credenciais sao redigidas antes de ir para a auditoria', async () => {
+  const comandos = [
+    'curl -H "Authorization: Bearer sk-abc123456789xyz" https://api.exemplo.com',
+    'git clone https://daniel:MinhaSenha123@github.com/org/repo.git',
+    'npm publish --token=npm_ABCDEFGHIJKLMNOPQRST',
+    'setx JARVIS_TAVILY_API_KEY tvly-dev-9f8e7d6c5b4a',
+  ];
+  const segredos = ['sk-abc123456789xyz', 'MinhaSenha123', 'npm_ABCDEFGHIJKLMNOPQRST', 'tvly-dev-9f8e7d6c5b4a'];
+
+  for (const comando of comandos) {
+    await policy.appendAudit({
+      quando: new Date().toISOString(),
+      comando: policy.redactSecrets(comando),
+      classe: 'rede',
+      status: 'ok',
+    });
+  }
+
+  // Lido do disco, como faria quem abrisse o arquivo de auditoria.
+  const bruto = fs.readFileSync(process.env.JARVIS_COMMAND_AUDIT_PATH, 'utf8');
+  for (const segredo of segredos) {
+    assert.equal(bruto.includes(segredo), false, `segredo vazou para a auditoria: ${segredo}`);
+  }
+  assert.match(bruto, /REDIGIDO/);
+
+  // O registro continua util: o comando segue identificavel sem o valor.
+  const registros = await policy.readAudit();
+  assert.match(registros.at(-1).comando, /^setx JARVIS_TAVILY_API_KEY/);
+});
+
+test('a redacao nao destroi comandos sem segredo', () => {
+  for (const comando of ['git status', 'npm run build -- --mode=production', 'node scripts/deploy.js']) {
+    assert.equal(policy.redactSecrets(comando), comando);
+  }
+});
+
 test('a auditoria sobrevive à reinicialização', async () => {
   await policy.appendAudit({ quando: new Date().toISOString(), comando: 'git status', classe: 'leitura', status: 'ok' });
   // Releitura a partir do disco, como faria um processo recém-iniciado.

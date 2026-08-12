@@ -176,6 +176,31 @@ function killTree(pid) {
   });
 }
 
+// Um comando aprovado pelo usuario pode carregar credencial no proprio texto
+// (`curl -H "Authorization: Bearer ..."`, `$env:OPENAI_API_KEY="sk-..."`,
+// `git clone https://user:senha@host/repo`). A auditoria e' um arquivo em
+// texto puro que sobrevive a reinicializacao: gravar o comando cru
+// transformaria o registro de seguranca num deposito de segredos. Redigimos
+// o VALOR e preservamos a forma, para o registro continuar legivel.
+const PADROES_SEGREDO = [
+  // Atribuicao a variavel/flag com nome sugestivo, com ou sem aspas.
+  [/((?:api[-_]?key|apikey|secret|token|password|passwd|pwd|senha|credential)\s*[:=]\s*)(["']?)([^\s"';|&]+)\2/gi, '$1$2[REDIGIDO]$2'],
+  // Cabecalho de autorizacao.
+  [/((?:authorization|auth|proxy-authorization)\s*:\s*(?:bearer|basic|token)?\s*)([^\s"';|&]+)/gi, '$1[REDIGIDO]'],
+  // Credencial embutida em URL.
+  [/(\b[a-z][a-z0-9+.-]*:\/\/)([^\s:@/]+):([^\s@/]+)@/gi, '$1$2:[REDIGIDO]@'],
+  // Formatos de chave reconheciveis por prefixo, mesmo soltos no comando.
+  [/\b(sk|pk|rk|tvly|ghp|gho|ghu|ghs|ghr|github_pat|npm|xox[baprs]|AKIA|ASIA|glpat|dop_v1|shpat)[-_][A-Za-z0-9_-]{8,}/g, '[REDIGIDO]'],
+  // Flags de linha de comando que recebem o segredo como proximo argumento.
+  [/(--(?:token|password|api-key|apikey|secret)|--with-token)(?:\s+|=)(["']?)([^\s"';|&]+)\3/gi, '$1=$2[REDIGIDO]$2'],
+];
+
+function redactSecrets(texto) {
+  let saida = String(texto ?? '');
+  for (const [padrao, substituto] of PADROES_SEGREDO) saida = saida.replace(padrao, substituto);
+  return saida;
+}
+
 async function appendAudit(registro) {
   try {
     await fs.mkdir(path.dirname(AUDIT_PATH), { recursive: true });
@@ -247,7 +272,7 @@ async function runCommand(command, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, signal
   const duracaoMs = Date.now() - inicio;
   await appendAudit({
     quando: new Date().toISOString(),
-    comando: String(command).slice(0, 500),
+    comando: redactSecrets(String(command)).slice(0, 500),
     classe: decisao?.classe || classify(command),
     aprovacao: decisao?.exigeAprovacao ? 'aprovada' : 'automatica',
     status: resultado.status,
@@ -270,6 +295,7 @@ module.exports = {
   isSafeRead,
   killTree,
   readAudit,
+  redactSecrets,
   runCommand,
   sanitizedEnv,
 };
