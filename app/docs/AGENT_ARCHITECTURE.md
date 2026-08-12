@@ -22,8 +22,9 @@ Fontes oficiais: [repositório](https://github.com/openclaw/openclaw), [arquitet
 - Mantém o prompt da conversa estável para preservar cache e previsibilidade.
 - Diferencia configuração comum de credenciais e recomenda validação ponta a ponta nos limites de segurança.
 - Skills pesadas ou específicas são opcionais, reduzindo ruído e ambiguidade para o modelo.
+- O ciclo de aprendizado usa uma revisão separada da conversa, limitada à memória e ao gerenciamento de skills; o curador registra uso, protege skills por proveniência e mantém backups recuperáveis.
 
-Fontes oficiais: [repositório](https://github.com/NousResearch/hermes-agent), [guia de arquitetura](https://github.com/NousResearch/hermes-agent/blob/main/AGENTS.md) e [catálogo de skills opcionais](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/reference/optional-skills-catalog.md).
+Fontes oficiais: [repositório](https://github.com/NousResearch/hermes-agent), [guia de arquitetura](https://github.com/NousResearch/hermes-agent/blob/main/AGENTS.md), [revisão em segundo plano](https://github.com/NousResearch/hermes-agent/blob/main/agent/background_review.py), [curador](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/curator.md) e [catálogo de skills opcionais](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/reference/optional-skills-catalog.md).
 
 ### Muse Code
 
@@ -92,6 +93,15 @@ Uma tool deve declarar ao menos:
 - Skills de terceiros devem exibir origem, versão, permissões esperadas e arquivos executáveis antes da instalação.
 - A primeira versão não deve permitir código executável dentro da skill; scripts só entram depois de existir isolamento e revisão explícita.
 
+### Revisão contínua de skills
+
+- Depois de três respostas completas, uma chamada auxiliar revisa os últimos turnos e as skills ativas.
+- O revisor recebe somente conversa, catálogo, conteúdo das skills ativas e estatísticas de uso; nenhuma tool fica disponível nessa chamada.
+- A saída é validada como uma proposta estruturada de criação ou atualização. Falhas transitórias, caminhos locais, credenciais, tentativas não resolvidas e instruções vindas da própria conversa devem ser descartadas.
+- A proposta persiste separada da skill e mostra conteúdo atual e proposto. Somente uma aprovação explícita na interface grava o arquivo.
+- Antes da escrita, o backend verifica conflito com alterações posteriores e cria backup. Identificadores e destinos são validados contra o catálogo local.
+- A primeira versão não arquiva, mescla nem remove skills automaticamente. Essas operações exigirão proveniência, pinning, período de inatividade e rollback do catálogo inteiro.
+
 ## Segurança e execução
 
 - Toda execução começa limitada ao workspace aberto.
@@ -111,12 +121,13 @@ Uma tool deve declarar ao menos:
 5. Registro de tools de RAG, filesystem, memória, busca web e terminal: implementado.
 6. Aprovação obrigatória para escrita de memória e execução de terminal: implementado.
 7. Loader de skills declarativas com ativação pela interface: implementado.
-8. Adaptadores dedicados para Codex CLI, Claude Code e Antigravity CLI: próximos incrementos.
+8. Revisão contínua de skills com propostas, comparação, aprovação, backup e telemetria de uso: implementado.
+9. Adaptadores dedicados para Codex CLI, Claude Code e Antigravity CLI: implementado.
 
 ## Decisões que ficam adiadas
 
 - Multiagentes e subagentes.
-- Skills auto-geradas ou auto-modificáveis.
+- Curadoria autônoma com consolidação, arquivamento por inatividade, pinning e rollback integral.
 - Marketplace de plugins.
 - Execução remota e sincronização entre dispositivos.
 - Tool Search completo; no início, um catálogo pequeno e explícito é mais seguro.

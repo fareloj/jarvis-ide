@@ -76,6 +76,8 @@ const state = {
   activeSkills,
   toolsEnabled: localStorage.getItem('jarvis:tools-enabled') !== 'false',
   conversationMemoryEnabled: localStorage.getItem('jarvis:conversation-memory') !== 'false',
+  continuousLearningEnabled: localStorage.getItem('jarvis:continuous-learning') !== 'false',
+  skillReviewBusy: false,
   projectFiles: [],
   selectedFile: null,
   ragDocuments: [],
@@ -550,6 +552,12 @@ function specialPage(type) {
           <h2>Skills</h2>
           <div id="skillCatalog" class="capability-list"><span class="empty-copy">Carregando skills…</span></div>
         </section>
+        <section class="settings-group learning-group">
+          <h2>Aprendizado contínuo</h2>
+          <div class="setting-row"><span><strong>Revisar skills</strong><small>A cada três respostas, o modelo pode propor melhorias; nenhuma alteração é aplicada sem sua aprovação</small></span><button class="toggle ${state.continuousLearningEnabled ? 'on' : ''}" data-action="toggle-continuous-learning" aria-label="Alternar revisão contínua de skills"></button></div>
+          <div class="learning-toolbar"><span>Propostas persistentes com conteúdo anterior e revisado</span><button class="button compact secondary" data-action="review-skills-now"><i class="ph-duotone ph-sparkle"></i>Revisar agora</button></div>
+          <div id="skillReviewList" class="skill-review-list"><span class="empty-copy">Carregando revisões…</span></div>
+        </section>
       </div>`;
   } else if (type === 'files') {
     page.className = 'content-view file-browser-page special-page';
@@ -630,6 +638,93 @@ async function loadCapabilities() {
   } catch (error) {
     if (skillTarget) skillTarget.textContent = error.message;
     if (toolTarget) toolTarget.textContent = error.message;
+  }
+}
+
+function skillReviewCard(proposal) {
+  const statusLabel = { pending: 'aguardando revisão', applied: 'aplicada', rejected: 'descartada' }[proposal.status] || proposal.status;
+  const confidence = Math.round((Number(proposal.confidence) || 0) * 100);
+  return `<article class="skill-review-card ${escapeHtml(proposal.status)}">
+    <div class="skill-review-heading">
+      <span><strong>${escapeHtml(proposal.title || proposal.skillId)}</strong><small>${escapeHtml(proposal.action === 'create' ? 'nova skill' : `atualizar ${proposal.skillId}`)} · confiança ${confidence}%</small></span>
+      <span class="review-status">${escapeHtml(statusLabel)}</span>
+    </div>
+    <p>${escapeHtml(proposal.reason || 'Sem justificativa informada.')}</p>
+    <details>
+      <summary>Comparar conteúdo</summary>
+      <div class="skill-review-diff">
+        <div><span>Atual</span><pre>${escapeHtml(proposal.originalContent || '(nova skill)')}</pre></div>
+        <div><span>Proposto</span><pre>${escapeHtml(proposal.proposedContent || '')}</pre></div>
+      </div>
+    </details>
+    ${proposal.status === 'pending' ? `<div class="skill-review-actions">
+      <button class="button compact secondary" data-skill-review-id="${escapeHtml(proposal.id)}" data-review-approved="false">Descartar</button>
+      <button class="button compact primary" data-skill-review-id="${escapeHtml(proposal.id)}" data-review-approved="true">Aplicar revisão</button>
+    </div>` : ''}
+  </article>`;
+}
+
+async function loadSkillReviews() {
+  const target = $('#skillReviewList');
+  if (!target || !bridge?.skills?.reviews) return;
+  try {
+    const payload = await bridge.skills.reviews();
+    const proposals = payload.proposals || [];
+    target.innerHTML = proposals.length
+      ? proposals.map(skillReviewCard).join('')
+      : '<p class="empty-copy">Nenhuma revisão proposta. O JARVIS só sugere mudanças quando encontra um aprendizado procedural durável.</p>';
+  } catch (error) {
+    target.textContent = error.message;
+  }
+}
+
+async function runSkillReview({ manual = false } = {}) {
+  if (!bridge?.skills?.review || (!manual && !state.continuousLearningEnabled)) return;
+  if (state.skillReviewBusy) {
+    if (manual) toast('Revisão em andamento', 'Aguarde a revisão atual terminar.');
+    return;
+  }
+  if (manual && state.busy) {
+    toast('Resposta em andamento', 'Aguarde o modelo concluir antes de revisar as skills.', 'error');
+    return;
+  }
+  const assistantTurns = state.messages.filter((message) => message.role === 'assistant').length;
+  if (!manual && (assistantTurns < 3 || assistantTurns % 3 !== 0)) return;
+  state.skillReviewBusy = true;
+  if (manual) toast('Revisando skills', 'O modelo está procurando aprendizados procedurais nesta conversa.');
+  try {
+    const result = await bridge.skills.review({
+      messages: state.messages.map(({ role, content }) => ({ role, content })),
+      activeSkills: state.activeSkills,
+      sessionId: state.sessionId,
+      model: state.model,
+    });
+    if (result.status === 'proposed') {
+      toast('Nova revisão de skill', `${result.proposal.title} aguarda sua aprovação nas configurações.`);
+    } else if (manual && result.status === 'no_change') {
+      toast('Skills revisadas', result.reason || 'Nenhuma melhoria durável foi encontrada.');
+    } else if (manual && result.status === 'skipped') {
+      toast('Revisão adiada', result.reason);
+    }
+    await loadSkillReviews();
+  } catch (error) {
+    if (manual) toast('Falha ao revisar skills', error.message, 'error');
+    else log(`skills · revisão contínua indisponível: ${error.message}`);
+  } finally {
+    state.skillReviewBusy = false;
+  }
+}
+
+async function resolveSkillReview(id, approved) {
+  try {
+    const result = await bridge.skills.resolveReview({ id, approved });
+    toast(
+      approved ? 'Skill atualizada' : 'Revisão descartada',
+      approved ? `${result.proposal.skillId} foi atualizada e a versão anterior foi preservada.` : 'A proposta não alterou nenhuma skill.',
+    );
+    await Promise.all([loadSkillReviews(), loadCapabilities()]);
+  } catch (error) {
+    toast('Falha ao resolver revisão', error.message, 'error');
   }
 }
 
@@ -906,6 +1001,7 @@ function switchNav(nav) {
       select.addEventListener('change', () => setModel(select.value));
       $('#testConnection').addEventListener('click', checkHealth);
       loadCapabilities();
+      loadSkillReviews();
     }
     if (nav === 'rag') {
       checkRagHealth();
@@ -1342,6 +1438,7 @@ function handleChatEvent(event = {}) {
     finishChatRequest(requestId);
     scheduleQuotaRefresh();
     maybeGenerateTitle();
+    runSkillReview();
     return;
   }
 
@@ -1871,6 +1968,15 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  const skillReviewTarget = event.target.closest('[data-skill-review-id]');
+  if (skillReviewTarget) {
+    await resolveSkillReview(
+      skillReviewTarget.dataset.skillReviewId,
+      skillReviewTarget.dataset.reviewApproved === 'true',
+    );
+    return;
+  }
+
   const target = event.target.closest('button, [data-view], [data-nav], [data-action]');
   if (!target) return;
 
@@ -1967,6 +2073,18 @@ document.addEventListener('click', async (event) => {
     target.classList.toggle('on', state.toolsEnabled);
     localStorage.setItem('jarvis:tools-enabled', String(state.toolsEnabled));
   }
+  if (action === 'toggle-continuous-learning') {
+    state.continuousLearningEnabled = !state.continuousLearningEnabled;
+    target.classList.toggle('on', state.continuousLearningEnabled);
+    localStorage.setItem('jarvis:continuous-learning', String(state.continuousLearningEnabled));
+    toast(
+      state.continuousLearningEnabled ? 'Aprendizado contínuo ligado' : 'Aprendizado contínuo desligado',
+      state.continuousLearningEnabled
+        ? 'O JARVIS poderá propor revisões; aplicar continuará exigindo sua aprovação.'
+        : 'Novas revisões automáticas foram pausadas. Propostas pendentes continuam salvas.',
+    );
+  }
+  if (action === 'review-skills-now') runSkillReview({ manual: true });
   if (action === 'rag-refresh') checkRagHealth();
   if (action === 'rag-index') indexCurrentProject();
   if (action === 'rag-search') searchKnowledge();

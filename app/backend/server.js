@@ -7,6 +7,7 @@ const { formatSkillsForPrompt, listSkills, loadActiveSkills } = require('./skill
 const tools = require('./tool-registry');
 const quota = require('./quota-monitor');
 const conversationMemory = require('./conversation-memory');
+const { createSkillReview } = require('./skill-review');
 
 const DEFAULT_MODEL = process.env.JARVIS_OLLAMA_MODEL || 'gpt-oss:120b-cloud';
 const OLLAMA_HOST = (process.env.JARVIS_OLLAMA_HOST || 'http://127.0.0.1:11434').replace(/\/$/, '');
@@ -113,9 +114,16 @@ async function chat(messages, model = DEFAULT_MODEL) {
   };
 }
 
+const skillReview = createSkillReview({
+  generate: async (messages, model) => (await chat(messages, model || DEFAULT_MODEL)).message,
+});
+
 async function streamChat(messages, model, runId, clientResponse, abortController, options = {}) {
   const conversation = normalizeMessages(messages);
   const activeSkills = await loadActiveSkills(options.activeSkills);
+  skillReview.recordUsage(options.activeSkills || []).catch((error) => {
+    console.error('[skills] falha ao registrar uso:', error.message);
+  });
   const skillPrompt = formatSkillsForPrompt(activeSkills);
   const memories = options.projectPath && !options.memoryContextIncluded ? await listMemories(options.projectPath) : [];
   const memoryPrompt = formatMemoriesForPrompt(memories);
@@ -271,6 +279,23 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
 
       if (request.method === 'GET' && request.url === '/api/skills') {
         sendJson(response, 200, { skills: (await listSkills()).map(({ content, ...skill }) => skill) });
+        return;
+      }
+
+      if (request.method === 'GET' && request.url === '/api/skills/reviews') {
+        sendJson(response, 200, { proposals: await skillReview.listProposals() });
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/skills/review') {
+        const body = await readJson(request, 5_000_000);
+        sendJson(response, 200, await skillReview.review(body));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/skills/reviews/resolve') {
+        const body = await readJson(request);
+        sendJson(response, 200, await skillReview.resolve(body.id, body.approved === true));
         return;
       }
 
