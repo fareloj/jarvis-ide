@@ -165,18 +165,45 @@ async function planWrite({ projectPath, path: caminho, content, baseHash } = {})
   };
 }
 
+// Registra como desfazer a escrita ANTES de aplicá-la. Atualização guarda
+// uma cópia do conteúdo anterior; criação guarda apenas o hash que sera'
+// gravado, porque desfazer uma criacao e' apagar o arquivo — e so' podemos
+// apagar se ninguem tiver escrito nele depois.
 async function backup(plano) {
-  if (plano.hashBase === null) return null; // arquivo novo: desfazer e' apagar
   await fs.mkdir(BACKUP_ROOT, { recursive: true });
   const id = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
-  const destino = path.join(BACKUP_ROOT, `${id}.bak`);
-  await fs.copyFile(plano.alvo, destino);
+  if (plano.hashBase !== null) {
+    await fs.copyFile(plano.alvo, path.join(BACKUP_ROOT, `${id}.bak`));
+  }
   await fs.writeFile(
     path.join(BACKUP_ROOT, `${id}.json`),
-    JSON.stringify({ id, path: plano.path, alvo: plano.alvo, hashBase: plano.hashBase }, null, 2),
+    JSON.stringify({
+      id,
+      tipo: plano.tipo,
+      path: plano.path,
+      raiz: plano.raiz,
+      alvo: plano.alvo,
+      hashBase: plano.hashBase,
+      hashAplicado: plano.hashNovo,
+    }, null, 2),
     'utf8',
   );
   return id;
+}
+
+// Depois de apagar um arquivo criado, remove os diretorios que a criacao
+// trouxe junto. rmdir falha em pasta nao vazia, entao a subida para sozinha
+// no primeiro diretorio que ainda tem conteudo.
+async function removerDiretoriosVazios(alvo, raiz) {
+  let atual = path.dirname(alvo);
+  while (atual.startsWith(raiz + path.sep)) {
+    try {
+      await fs.rmdir(atual);
+    } catch {
+      return;
+    }
+    atual = path.dirname(atual);
+  }
 }
 
 /**
@@ -218,12 +245,33 @@ async function applyWrite(plano) {
   return { path: plano.path, tipo: plano.tipo, backupId, hash: plano.hashNovo };
 }
 
-/** Restaura o conteudo anterior de uma escrita aplicada. */
+/**
+ * Desfaz uma escrita aplicada.
+ *
+ * Atualizacao volta ao conteudo salvo no backup. Criacao e' desfeita
+ * apagando o arquivo, mas somente se o conteudo em disco ainda for
+ * exatamente o que foi gravado: se alguem editou depois, apagar destruiria
+ * trabalho que nunca fez parte desta operacao.
+ */
 async function undoWrite(backupId) {
   const meta = JSON.parse(await fs.readFile(path.join(BACKUP_ROOT, `${backupId}.json`), 'utf8'));
+
+  if (meta.tipo === 'criar') {
+    const atual = await readIfExists(meta.alvo);
+    if (atual === null) return { path: meta.path, restaurado: true, removido: false };
+    if (hashOf(atual) !== meta.hashAplicado) {
+      const erro = new Error('O arquivo criado mudou depois da gravação; desfazer apagaria conteúdo novo.');
+      erro.code = 'CONFLITO';
+      throw erro;
+    }
+    await fs.unlink(meta.alvo);
+    if (meta.raiz) await removerDiretoriosVazios(meta.alvo, meta.raiz);
+    return { path: meta.path, restaurado: true, removido: true };
+  }
+
   const conteudo = await fs.readFile(path.join(BACKUP_ROOT, `${backupId}.bak`), 'utf8');
   await fs.writeFile(meta.alvo, conteudo, 'utf8');
-  return { path: meta.path, restaurado: true };
+  return { path: meta.path, restaurado: true, removido: false };
 }
 
 /** Varias escritas numa operacao so'. Planeja todas antes de aplicar qualquer uma. */

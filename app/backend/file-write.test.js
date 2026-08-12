@@ -171,6 +171,29 @@ test('desfazer restaura o conteúdo anterior', async () => {
   await fs.rm(raiz, { recursive: true, force: true });
 });
 
+test('desfazer apaga arquivo criado somente se o hash ainda for o aplicado', async () => {
+  const raiz = await projetoTemporario();
+
+  const plano = await fileWrite.planWrite({ projectPath: raiz, path: 'gerado/novo.txt', content: 'criado\n' });
+  const aplicado = await fileWrite.applyWrite(plano);
+  assert.equal(await fs.readFile(path.join(raiz, 'gerado', 'novo.txt'), 'utf8'), 'criado\n');
+
+  const desfeito = await fileWrite.undoWrite(aplicado.backupId);
+  assert.equal(desfeito.removido, true);
+  await assert.rejects(fs.stat(path.join(raiz, 'gerado', 'novo.txt')), { code: 'ENOENT' });
+  await assert.rejects(fs.stat(path.join(raiz, 'gerado')), { code: 'ENOENT' }, 'a pasta criada junto também sai');
+
+  // Agora com edição posterior: desfazer não pode apagar o que veio depois.
+  const outro = await fileWrite.planWrite({ projectPath: raiz, path: 'depois.txt', content: 'criado\n' });
+  const aplicadoOutro = await fileWrite.applyWrite(outro);
+  await fs.writeFile(path.join(raiz, 'depois.txt'), 'trabalho do usuário\n', 'utf8');
+
+  await assert.rejects(fileWrite.undoWrite(aplicadoOutro.backupId), /apagaria conteúdo novo/i);
+  assert.equal(await fs.readFile(path.join(raiz, 'depois.txt'), 'utf8'), 'trabalho do usuário\n');
+
+  await fs.rm(raiz, { recursive: true, force: true });
+});
+
 test('patch limita a quantidade de arquivos por operação', async () => {
   const raiz = await projetoTemporario();
   const demais = Array.from({ length: fileWrite.MAX_FILES_PER_OPERATION + 1 }, (_, i) => ({
