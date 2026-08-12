@@ -66,6 +66,38 @@ test('recusa symlink que aponta para fora do projeto', async (context) => {
   await fs.rm(fora, { recursive: true, force: true });
 });
 
+test('junction criada entre o plano e a gravação bloqueia a escrita', async (context) => {
+  const raiz = await projetoTemporario();
+  const fora = await projetoTemporario();
+  await fs.mkdir(path.join(raiz, 'src'));
+  // Mesmo conteúdo dos dois lados: só a revalidação de caminho pode barrar,
+  // porque a checagem de hash passaria sem notar a troca de destino.
+  await fs.writeFile(path.join(raiz, 'src', 'alvo.js'), 'base\n', 'utf8');
+  await fs.writeFile(path.join(fora, 'alvo.js'), 'base\n', 'utf8');
+
+  const plano = await fileWrite.planWrite({ projectPath: raiz, path: 'src/alvo.js', content: 'gravado\n' });
+
+  // O diretório aprovado vira um link para fora do projeto depois do plano.
+  await fs.rm(path.join(raiz, 'src'), { recursive: true, force: true });
+  let criouLink = true;
+  try {
+    await fs.symlink(fora, path.join(raiz, 'src'), 'junction');
+  } catch {
+    criouLink = false;
+  }
+  if (!criouLink) {
+    context.skip('sem permissão para criar junction neste ambiente');
+    return;
+  }
+
+  await assert.rejects(fileWrite.applyWrite(plano), /link|mudou de destino/i);
+  assert.equal(await fs.readFile(path.join(fora, 'alvo.js'), 'utf8'), 'base\n', 'o arquivo externo não pode ser tocado');
+
+  await fs.rm(path.join(raiz, 'src'), { recursive: true, force: true });
+  await fs.rm(raiz, { recursive: true, force: true });
+  await fs.rm(fora, { recursive: true, force: true });
+});
+
 test('planejar não altera o disco; o diff corresponde ao que será gravado', async () => {
   const raiz = await projetoTemporario();
   const arquivo = path.join(raiz, 'nota.md');

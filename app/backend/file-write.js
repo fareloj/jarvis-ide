@@ -131,7 +131,7 @@ function unifiedDiff(antes, depois, rotulo) {
  * tela de aprovacao; nada muda enquanto o usuario nao aprovar.
  */
 async function planWrite({ projectPath, path: caminho, content, baseHash } = {}) {
-  const { alvo, relativo } = await resolveWritableTarget(projectPath, caminho);
+  const { raiz, alvo, relativo } = await resolveWritableTarget(projectPath, caminho);
   const novo = String(content ?? '');
   if (Buffer.byteLength(novo, 'utf8') > MAX_FILE_BYTES) {
     throw new Error(`Conteúdo acima do limite de ${MAX_FILE_BYTES / 1_000_000} MB.`);
@@ -153,6 +153,7 @@ async function planWrite({ projectPath, path: caminho, content, baseHash } = {})
   return {
     tipo: atual === null ? 'criar' : 'atualizar',
     path: relativo,
+    raiz,
     alvo,
     conteudo: novo,
     hashBase: hashAtual,
@@ -179,10 +180,30 @@ async function backup(plano) {
 }
 
 /**
- * Aplica um plano ja' aprovado. Revalida o hash imediatamente antes de
- * escrever: entre a aprovacao e o clique, o arquivo pode ter mudado.
+ * Revalida o caminho do plano no instante da gravacao.
+ *
+ * A checagem feita no planejamento envelhece: entre aprovar e gravar, um
+ * diretorio do caminho pode virar junction ou symlink apontando para fora do
+ * workspace (no Windows, criar junction nao exige privilegio de administrador).
+ * O plano guarda a raiz real; aqui refazemos a resolucao e exigimos que o
+ * destino continue sendo exatamente o mesmo arquivo aprovado.
+ */
+async function revalidateTarget(plano) {
+  const { alvo } = await resolveWritableTarget(plano.raiz, plano.path);
+  if (alvo !== plano.alvo) {
+    const erro = new Error('O caminho aprovado mudou de destino antes da gravação.');
+    erro.code = 'CAMINHO_ALTERADO';
+    throw erro;
+  }
+  return alvo;
+}
+
+/**
+ * Aplica um plano ja' aprovado. Revalida caminho e hash imediatamente antes
+ * de escrever: entre a aprovacao e o clique, o arquivo pode ter mudado.
  */
 async function applyWrite(plano) {
+  await revalidateTarget(plano);
   const atual = await readIfExists(plano.alvo);
   const hashAtual = atual === null ? null : hashOf(atual);
   if (hashAtual !== plano.hashBase) {
@@ -228,6 +249,7 @@ module.exports = {
   MAX_FILE_BYTES,
   applyWrite,
   hashOf,
+  revalidateTarget,
   planPatch,
   planWrite,
   resolveWritableTarget,
