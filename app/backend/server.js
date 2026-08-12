@@ -226,6 +226,10 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
       const outcome = await tools.requestTool(name, args, {
         projectPath: options.projectPath,
         corpus: options.corpus,
+        // Cancelar a conversa precisa alcancar o processo que ela abriu:
+        // sem este sinal, terminal_run e delegate_coding_task seguiam
+        // rodando (com toda a arvore de filhos) depois do cancelamento.
+        signal: abortController.signal,
       });
       if (outcome.status === 'approval_required') {
         approvalRequired = true;

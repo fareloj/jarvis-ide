@@ -286,8 +286,20 @@ const DELEGATE_MAX_BUFFER = 5_000_000;
 // um pipe aberto mesmo pedindo 'ignore'), e as três CLIs leem stdin por
 // padrão em modo headless — sem EOF explícito, ficam penduradas esperando
 // indefinidamente. spawn() com stdio real resolve isso.
-function runCli(binary, args, { cwd, timeoutMs }) {
+//
+// child.kill() derrubava só o processo que abrimos. Uma CLI de agente é o
+// contrário de uma folha: ela abre o próprio runtime, o shell das tools que
+// executa e os processos que esses comandos disparam. No Windows, matar o pai
+// deixa toda essa descendência rodando dentro do projeto do usuário depois do
+// timeout ou do cancelamento. Aqui o encerramento percorre a árvore inteira,
+// pelo mesmo caminho usado pelo terminal mediado (commandPolicy.killTree).
+function runCli(binary, args, { cwd, timeoutMs, signal }) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(Object.assign(new Error('Delegação cancelada.'), { cancelled: true }));
+      return;
+    }
+
     let child;
     try {
       child = spawn(binary, args, {
@@ -304,18 +316,36 @@ function runCli(binary, args, { cwd, timeoutMs }) {
     let stdout = '';
     let stderr = '';
     let settled = false;
+    let encerradoPor = null;
 
+    const limpar = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', aoAbortar);
+    };
     const finish = (fn, value) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      limpar();
       fn(value);
     };
 
-    const timer = setTimeout(() => {
-      child.kill();
-      finish(reject, Object.assign(new Error('Tempo esgotado esperando o agente responder.'), { timedOut: true }));
-    }, timeoutMs);
+    // Encerra a árvore e espera o `close` chegar: só então sabemos que não
+    // sobrou processo neto vivo. Se o close não vier, o próprio killTree já
+    // terminou o trabalho e o finish abaixo resolve a promessa.
+    const encerrar = async (motivo) => {
+      if (encerradoPor) return;
+      encerradoPor = motivo;
+      await commandPolicy.killTree(child.pid);
+      if (motivo === 'timeout') {
+        finish(reject, Object.assign(new Error('Tempo esgotado esperando o agente responder.'), { timedOut: true, stdout, stderr }));
+      } else {
+        finish(reject, Object.assign(new Error('Delegação cancelada.'), { cancelled: true, stdout, stderr }));
+      }
+    };
+
+    const timer = setTimeout(() => { encerrar('timeout'); }, timeoutMs);
+    const aoAbortar = () => { encerrar('cancelado'); };
+    signal?.addEventListener('abort', aoAbortar, { once: true });
 
     child.stdout.on('data', (chunk) => {
       if (stdout.length < DELEGATE_MAX_BUFFER) stdout += chunk;
@@ -325,13 +355,14 @@ function runCli(binary, args, { cwd, timeoutMs }) {
     });
     child.on('error', (error) => finish(reject, error)); // preserva error.code === 'ENOENT'
     child.on('close', (code) => {
+      if (encerradoPor) return; // o motivo real já está a caminho de rejeitar
       if (code === 0) finish(resolve, { stdout, stderr });
       else finish(reject, Object.assign(new Error(`Processo saiu com código ${code}`), { stdout, stderr, exitCode: code }));
     });
   });
 }
 
-async function delegateCodingTask(projectPath, agent, prompt) {
+async function delegateCodingTask(projectPath, agent, prompt, { signal } = {}) {
   const cwd = path.resolve(String(projectPath || ''));
   const promptText = String(prompt || '').trim();
   if (!promptText) throw new Error('O prompt da delegação não pode ser vazio.');
@@ -345,7 +376,7 @@ async function delegateCodingTask(projectPath, agent, prompt) {
       // que o usuário já tem configurada.
       const { stdout } = await runCli(binary, [
         '-p', promptText, '--output-format', 'json', '--permission-mode', 'acceptEdits',
-      ], { cwd, timeoutMs: DELEGATE_TIMEOUT_MS });
+      ], { cwd, timeoutMs: DELEGATE_TIMEOUT_MS, signal });
       const parsed = JSON.parse(stdout);
       return { agent, result: String(parsed.result || '').trim() };
     }
@@ -354,7 +385,7 @@ async function delegateCodingTask(projectPath, agent, prompt) {
       const outputFile = path.join(os.tmpdir(), `jarvis-codex-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`);
       await runCli(binary, [
         'exec', promptText, '--sandbox', 'workspace-write', '--skip-git-repo-check', '--output-last-message', outputFile,
-      ], { cwd, timeoutMs: DELEGATE_TIMEOUT_MS });
+      ], { cwd, timeoutMs: DELEGATE_TIMEOUT_MS, signal });
       const result = await fs.readFile(outputFile, 'utf8').catch(() => '');
       await fs.unlink(outputFile).catch(() => {});
       return { agent, result: result.trim() };
@@ -370,7 +401,7 @@ async function delegateCodingTask(projectPath, agent, prompt) {
       // real de segurança já aconteceu no nível da tool do JARVIS.
       const { stdout } = await runCli(binary, [
         '-p', promptText, '--dangerously-skip-permissions',
-      ], { cwd, timeoutMs: DELEGATE_TIMEOUT_MS });
+      ], { cwd, timeoutMs: DELEGATE_TIMEOUT_MS, signal });
       return { agent, result: stdout.trim() };
     }
   } catch (error) {
@@ -378,6 +409,7 @@ async function delegateCodingTask(projectPath, agent, prompt) {
       throw new Error(`${DELEGATE_LABELS[agent]} não está instalado ou não está no PATH deste computador.`);
     }
     if (error.timedOut) throw new Error(`${DELEGATE_LABELS[agent]} não respondeu a tempo.`);
+    if (error.cancelled) throw new Error(`${DELEGATE_LABELS[agent]} foi cancelado; a árvore de processos foi encerrada.`);
     const detail = (error.stderr || error.stdout || error.message || '').toString().slice(0, 2000);
     throw new Error(`${DELEGATE_LABELS[agent]} falhou: ${detail}`);
   }
@@ -410,7 +442,9 @@ async function runTool(name, args = {}, context = {}) {
       decisao,
     });
   }
-  if (name === 'delegate_coding_task') return delegateCodingTask(projectPath, args.agent, args.prompt);
+  if (name === 'delegate_coding_task') {
+    return delegateCodingTask(projectPath, args.agent, args.prompt, { signal: context.signal });
+  }
   // As tools de escrita nunca chegam aqui pelo caminho normal: elas sao
   // aplicadas a partir do plano congelado em resolveApproval. Este ramo
   // existe para recusar uma chamada direta sem aprovacao.
@@ -473,6 +507,7 @@ async function resolveApproval(id, approved) {
 module.exports = {
   commandPolicy,
   delegateCodingTask,
-  fileWrite, describeTools, listProjectDirectory, previewProjectFile, publicDefinitions,
+  fileWrite, describeTools,
+  runCli, listProjectDirectory, previewProjectFile, publicDefinitions,
   requestTool, resolveApproval, resolveProjectTarget, runTool,
 };

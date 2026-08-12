@@ -5,8 +5,10 @@ const path = require('node:path');
 const test = require('node:test');
 const {
   delegateCodingTask, listProjectDirectory, previewProjectFile, publicDefinitions, requestTool, resolveApproval,
-  resolveProjectTarget,
+  resolveProjectTarget, runCli,
 } = require('./tool-registry');
+
+const ehWindows = process.platform === 'win32';
 
 test('tools de arquivo permanecem confinadas ao projeto', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-tool-'));
@@ -88,6 +90,59 @@ test('terminal_run sempre para na aprovação, mesmo em leitura pura', async () 
     const denied = await resolveApproval(pending.approval.id, false);
     assert.equal(denied.status, 'denied');
   }
+  await fs.rm(root, { recursive: true, force: true });
+});
+
+// A CLI delegada abre o próprio runtime e o shell das tools: matar só o
+// processo que abrimos deixaria essa descendência viva dentro do projeto.
+const SCRIPT_COM_NETO = `
+  const { spawn } = require('node:child_process');
+  const marcador = process.argv[1];
+  spawn(process.execPath, ['-e', "const fs=require('node:fs');setInterval(()=>fs.appendFileSync(process.argv[1],'x'),100)", marcador], { stdio: 'ignore' });
+  setTimeout(() => {}, 60000);
+`;
+
+test('cancelar a delegação encerra a árvore de processos', { skip: !ehWindows }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-delegate-cancel-'));
+  const marcador = path.join(root, 'neto.log');
+  await fs.writeFile(marcador, '', 'utf8');
+
+  const controle = new AbortController();
+  setTimeout(() => controle.abort(), 900);
+
+  const inicio = Date.now();
+  await assert.rejects(
+    runCli(process.execPath, ['-e', SCRIPT_COM_NETO, marcador], {
+      cwd: root, timeoutMs: 30_000, signal: controle.signal,
+    }),
+    /cancelada/i,
+  );
+  assert.ok(Date.now() - inicio < 20_000, 'o cancelamento não pode esperar o timeout');
+
+  // O neto continuaria escrevendo se só o pai tivesse morrido.
+  const antes = (await fs.stat(marcador)).size;
+  await new Promise((resolve) => { setTimeout(resolve, 1_200); });
+  assert.equal((await fs.stat(marcador)).size, antes, 'o processo neto deveria estar encerrado');
+
+  await fs.rm(root, { recursive: true, force: true });
+});
+
+test('timeout da delegação encerra a árvore e não deixa órfão', { skip: !ehWindows }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-delegate-timeout-'));
+  const marcador = path.join(root, 'neto.log');
+  await fs.writeFile(marcador, '', 'utf8');
+
+  const inicio = Date.now();
+  await assert.rejects(
+    runCli(process.execPath, ['-e', SCRIPT_COM_NETO, marcador], { cwd: root, timeoutMs: 1_500 }),
+    /tempo esgotado/i,
+  );
+  assert.ok(Date.now() - inicio < 20_000);
+
+  const antes = (await fs.stat(marcador)).size;
+  await new Promise((resolve) => { setTimeout(resolve, 1_200); });
+  assert.equal((await fs.stat(marcador)).size, antes, 'o processo neto deveria estar encerrado');
+
   await fs.rm(root, { recursive: true, force: true });
 });
 
