@@ -38,7 +38,7 @@ Não misture refatorações oportunistas, mudanças visuais e funcionalidades n�
 | 2 | Autenticar o backend local | Claude Code | A | CONCLUÍDA | 1 |
 | 3 | Criar escrita e patch estruturados | Claude Code | A | CONCLUÍDA | 2 |
 | 4 | Endurecer terminal e execução de processos | Claude Code | A | CONCLUÍDA | 3 |
-| 5 | Transformar o visualizador em editor | Claude Code | A | PENDENTE | 3–4 |
+| 5 | Transformar o visualizador em editor | Claude Code | A | CONCLUÍDA | 3–4 |
 | 6 | Implementar integração Git e Diff | Claude Code | A | PENDENTE | 5 |
 | Gate | Revisar e integrar a Fase A na `main` | Codex | Integração | PENDENTE | 0–6 |
 | 7 | Implementar terminal interativo PTY | Codex | B | PENDENTE | Gate |
@@ -228,12 +228,41 @@ Permitir edição real de arquivos com a mesma linguagem visual atual.
 
 ### Critérios de aceite
 
-- [ ] Editar e salvar altera o arquivo correto.
-- [ ] Aba modificada apresenta indicador visual.
-- [ ] Fechar com mudanças não salvas pede confirmação.
-- [ ] Mudança externa gera aviso de conflito.
-- [ ] Arquivos grandes e binários recebem tratamento seguro.
-- [ ] Atalhos básicos funcionam no Windows.
+- [x] Editar e salvar altera o arquivo correto.
+- [x] Aba modificada apresenta indicador visual.
+- [x] Fechar com mudanças não salvas pede confirmação.
+- [x] Mudança externa gera aviso de conflito.
+- [x] Arquivos grandes e binários recebem tratamento seguro.
+- [x] Atalhos básicos funcionam no Windows.
+
+### Decisões
+
+**Monaco 0.56.0 (MIT, mantido pela Microsoft/VS Code).** CodeMirror 6 é ESM e
+exigiria um bundler, que este projeto não tem — a interface carrega bibliotecas
+por `<script>` direto de `node_modules`. Monaco entrega um loader AMD que
+funciona nesse formato. O carregamento é sob demanda, na primeira abertura da
+aba de arquivos: o loader define `define`/`require` globais e, se entrasse como
+tag fixa no HTML, `marked` e `DOMPurify` passariam a se registrar como módulo
+AMD em vez de expor `window.marked`/`window.DOMPurify`.
+
+**Duas aberturas na CSP, ambas verificadas no aplicativo real:** `font-src
+data:` (o Monaco embute a fonte de ícones como data URI) e `worker-src blob:`
+(os serviços de linguagem rodam em worker criado a partir de blob; sem isso o
+editor cai para a thread principal e trava a interface em arquivos grandes).
+Nenhuma das duas torna HTML injetado executável: um worker não tem DOM nem
+acesso a `window.jarvis`, e criar o blob já exige script rodando, o que
+`script-src 'self'` continua barrando.
+
+**Salvar reusa a escrita da Tarefa 3** (`saveProjectFile` → `planWrite` +
+`applyWrite`): confinamento ao workspace, revalidação de symlink/junction no
+instante da gravação, hash base contra edição concorrente e gravação atômica.
+O que muda é só o portão de aprovação — aqui quem aprova é o usuário salvando
+o arquivo que abriu. Conflito volta como HTTP 409 para a interface oferecer
+recarregar ou manter a versão local, em vez de um erro genérico.
+
+**Limites:** o editor abre texto até 800 KB (mesmo teto da pré-visualização);
+acima disso e para binários a aba fica somente leitura. Arquivo de imagem
+continua no visualizador de imagem.
 
 ---
 
@@ -484,12 +513,15 @@ Registre aqui problemas encontrados durante uma tarefa sem interromper o escopo 
 
 | Data | Origem | Pendência | Prioridade | Tarefa sugerida |
 |---|---|---|---|---|
+| 2026-08-14 | Tarefa 5 | `highlightCode` em `src/app.js` (e `src/highlight.test.js`) ficou sem chamador: o realce do visualizador foi substituído pelo Monaco. O teste guarda uma regressão de XSS real e por isso não foi removido junto. | Baixa | Gate (decidir remover código e teste juntos) |
+| 2026-08-14 | Tarefa 5 | A árvore de trabalho tem um seletor de modelos em andamento fora desta fase (`backend/model-catalog.js`, rota `/api/models`, diálogo de modelos) e um `remote-debugging-port 9222` marcado `// TEMP` em `electron/main.js`. Nada disso entrou nos commits das tarefas 5 e 6; segue não-preparado na árvore. A porta de depuração precisa sair antes de qualquer release. | Alta (a porta) | Gate |
 | 2026-08-12 | Tarefa 2 | `backend:health` falha com `ECONNRESET` na primeira chamada após o boot: o renderer consulta antes de o servidor estar escutando. Pré-existente (aparece em logs anteriores à autenticação) e sem impacto funcional — a próxima checagem sucede. | Baixa | 9 (runtime/retry) |
 
 ## Diário de execução
 
 | Data | Tarefa | Resultado | Testes | Commit | Observações |
 |---|---:|---|---|---|---|
+| 2026-08-14 | 5 | Visualizador virou editor Monaco com salvamento seguro | 99/99 (3 novos) | `feat(editor): add workspace file editing` | Validação manual dirigida no aplicativo real (harness temporário sobre `electron/main.js`): abrir, editar, indicador de aba suja, desfazer, salvar, conflito externo, recusa de sobrescrita, recarregar do disco, confirmação ao fechar, Ctrl+S e Ctrl+W — todos verificados contra o disco. |
 | 2026-08-12 | 4 | Correção dos bloqueadores do gate | 96/96 (7 novos) | 4 commits `fix(execution): ...` | Aprovação volta a ser obrigatória em todo `terminal_run`; ambiente das CLIs delegadas saneado por allowlist; `killTree` + `AbortSignal` na delegação, verificados com processo neto real; segredos redigidos antes da auditoria. |
 | 2026-08-12 | 3 | Correção dos bloqueadores do gate | 92/92 (5 novos) | 4 commits `fix(tools): ...` | Revalidação de caminho na gravação (teste troca diretório por junction entre plano e aplicação); patch transacional; desfazer criação por hash; gravação atômica por rename. |
 | 2026-08-12 | 4 | Política de comandos, ambiente saneado e kill de árvore | 84/84 (9 novos) | `feat(execution): isolate terminal processes` | Timeout e cancelamento verificados com processo real gerando neto. Sandbox de SO avaliada e recusada; decisão documentada. |

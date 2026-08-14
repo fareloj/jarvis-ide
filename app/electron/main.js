@@ -270,6 +270,44 @@ function registerIpc() {
     return data;
   });
 
+  // Salvar nao lanca erro no conflito: um arquivo mudado no disco e' um
+  // resultado previsto que a interface precisa tratar com escolha do usuario,
+  // e o IPC perde propriedades customizadas de um Error.
+  ipcMain.handle('project:save', async (_event, payload) => {
+    const response = await backendFetch('/api/project/save', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (response.ok) return { ok: true, ...data };
+    return { ok: false, code: data.code || null, error: data.error || 'Falha ao salvar o arquivo.', hashAtual: data.hashAtual ?? null };
+  });
+  ipcMain.handle('project:stat', async (_event, payload) => {
+    const response = await backendFetch('/api/project/stat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao consultar o arquivo.');
+    return data;
+  });
+
+  // "Salvar como" so' escolhe o destino; a gravacao continua passando pelo
+  // backend. Devolvemos o caminho RELATIVO ao projeto -- se o usuario escolher
+  // uma pasta fora, recusamos aqui e o backend recusaria de novo por conta propria.
+  ipcMain.handle('project:choose-save-path', async (_event, payload) => {
+    const projectPath = path.resolve(String(payload?.projectPath || ''));
+    if (!payload?.projectPath) throw new Error('Nenhum projeto aberto.');
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Salvar como',
+      defaultPath: path.join(projectPath, String(payload.path || '')),
+    });
+    if (result.canceled || !result.filePath) return null;
+    const relative = path.relative(projectPath, result.filePath);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+      throw new Error('Escolha um destino dentro do projeto aberto.');
+    }
+    return { path: relative.split(path.sep).join('/') };
+  });
+
   ipcMain.handle('memory:forget-session', async (_event, payload) => {
     const response = await backendFetch('/api/memory/conversation/forget', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),

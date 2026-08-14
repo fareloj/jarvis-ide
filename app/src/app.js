@@ -917,65 +917,275 @@ function initExplorer() {
   else ensureDirLoaded('.');
 }
 
+// --- Editor de arquivos -----------------------------------------------------
+//
+// Monaco entra por injeção dinâmica de <script>, não por tag no HTML: o loader
+// AMD define `define`/`require` globais, e as bibliotecas UMD já carregadas
+// (marked, DOMPurify) passariam a se registrar como módulo AMD em vez de expor
+// window.marked/window.DOMPurify. Carregando sob demanda, o loader só aparece
+// depois que todas elas se registraram — e abrir o aplicativo deixa de custar
+// os 24 MB de JS do editor para quem só quer conversar.
+const MONACO_VS = '../node_modules/monaco-editor/min/vs';
+const MONACO_LINGUAGENS = new Map(Object.entries({
+  bat: 'bat', c: 'c', cc: 'cpp', cpp: 'cpp', cs: 'csharp', css: 'css', csv: 'plaintext',
+  go: 'go', h: 'cpp', hpp: 'cpp', htm: 'html', html: 'html', ini: 'ini', java: 'java',
+  js: 'javascript', json: 'json', jsx: 'javascript', kt: 'kotlin', less: 'less', md: 'markdown',
+  mjs: 'javascript', php: 'php', ps1: 'powershell', py: 'python', rb: 'ruby', rs: 'rust',
+  scss: 'scss', sh: 'shell', sql: 'sql', svelte: 'html', svg: 'xml', toml: 'ini', ts: 'typescript',
+  tsx: 'typescript', txt: 'plaintext', vue: 'html', xml: 'xml', yaml: 'yaml', yml: 'yaml',
+}));
+const MONACO_NOMES = new Map(Object.entries({
+  dockerfile: 'dockerfile', makefile: 'plaintext', '.editorconfig': 'ini',
+  '.gitignore': 'plaintext', '.npmrc': 'ini', '.gitattributes': 'plaintext',
+}));
+
+let monacoCarregando = null;
+let editor = null;
+
+function linguagemDe(filePath) {
+  const nome = String(filePath).split('/').pop().toLowerCase();
+  if (MONACO_NOMES.has(nome)) return MONACO_NOMES.get(nome);
+  const extensao = nome.includes('.') ? nome.split('.').pop() : '';
+  return MONACO_LINGUAGENS.get(extensao) || 'plaintext';
+}
+
+// O visualizador anterior era escuro e usava estas cores exatas; o editor
+// herda a mesma paleta para a aba de arquivos não mudar de identidade.
+function definirTemaJarvis(monaco) {
+  monaco.editor.defineTheme('jarvis', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '8a8681', fontStyle: 'italic' },
+      { token: 'string', foreground: '9fd88f' },
+      { token: 'number', foreground: 'd9b76e' },
+      { token: 'keyword', foreground: '7cc4e8', fontStyle: 'bold' },
+      { token: 'type', foreground: '7cc4e8' },
+      { token: 'tag', foreground: '7cc4e8' },
+    ],
+    colors: {
+      'editor.background': '#201e1d',
+      'editor.foreground': '#e7e4e1',
+      'editorLineNumber.foreground': '#6b6864',
+      'editorLineNumber.activeForeground': '#e7e4e1',
+      'editor.lineHighlightBackground': '#2a2827',
+      'editorCursor.foreground': '#00a8d6',
+      'editor.selectionBackground': '#3c4f58',
+      'editorGutter.background': '#201e1d',
+      'editorWidget.background': '#2a2827',
+      'editorWidget.border': '#3a3635',
+      'editorSuggestWidget.background': '#2a2827',
+      'scrollbarSlider.background': '#3a363580',
+    },
+  });
+}
+
+function carregarMonaco() {
+  if (monacoCarregando) return monacoCarregando;
+  monacoCarregando = new Promise((resolve, reject) => {
+    const estilo = document.createElement('link');
+    estilo.rel = 'stylesheet';
+    estilo.href = `${MONACO_VS}/editor/editor.main.css`;
+    document.head.append(estilo);
+
+    const script = document.createElement('script');
+    script.src = `${MONACO_VS}/loader.js`;
+    script.addEventListener('load', () => {
+      window.require.config({ paths: { vs: MONACO_VS } });
+      window.require(['vs/editor/editor.main'], () => {
+        definirTemaJarvis(window.monaco);
+        resolve(window.monaco);
+      }, reject);
+    });
+    script.addEventListener('error', () => reject(new Error('Não foi possível carregar o editor de código.')));
+    document.head.append(script);
+  }).catch((erro) => {
+    monacoCarregando = null;
+    throw erro;
+  });
+  return monacoCarregando;
+}
+
+function abaAtiva() {
+  return state.openTabs.find((item) => item.path === state.activeTab) || null;
+}
+
+function abaEditavel(tab) {
+  return Boolean(tab && tab.kind === 'text');
+}
+
+// Sujeira por versão do modelo, não por comparação de texto: o identificador
+// alternativo do Monaco volta ao valor salvo quando o usuário desfaz tudo, e
+// não custa uma varredura do arquivo inteiro a cada tecla.
+function estaSuja(tab) {
+  if (!tab?.model) return false;
+  return tab.model.getAlternativeVersionId() !== tab.versaoSalva;
+}
+
+function atualizarSujeira(tab) {
+  const suja = estaSuja(tab);
+  if (suja === Boolean(tab.dirty)) return;
+  tab.dirty = suja;
+  renderEditorTabs();
+  if (state.activeTab === tab.path) renderEditorToolbar(tab);
+}
+
 function renderEditorTabs() {
   const bar = $('#fileTabsBar');
   if (!bar) return;
   bar.innerHTML = state.openTabs.map((tab) => `
-    <button class="file-tab ${state.activeTab === tab.path ? 'active' : ''}" data-tab-path="${escapeHtml(tab.path)}" title="${escapeHtml(tab.path)}">
+    <button class="file-tab ${state.activeTab === tab.path ? 'active' : ''} ${tab.dirty ? 'dirty' : ''} ${tab.conflitoExterno ? 'conflito' : ''}" data-tab-path="${escapeHtml(tab.path)}" title="${escapeHtml(tab.path)}${tab.dirty ? ' · não salvo' : ''}">
       <i class="ph-duotone ${fileIcon(tab.path)}"></i><span>${escapeHtml(tab.path.split('/').pop())}</span>
-      <span class="file-tab-close" data-close-tab="${escapeHtml(tab.path)}"><i class="ph-duotone ph-x"></i></span>
+      <span class="file-tab-close" data-close-tab="${escapeHtml(tab.path)}" title="Fechar">
+        <i class="ph-duotone ${tab.dirty ? 'ph-circle' : 'ph-x'}"></i>
+      </span>
     </button>`).join('');
+}
+
+function renderEditorToolbar(tab) {
+  const barra = $('#fileEditorToolbar');
+  if (!barra || !tab) return;
+  const linhas = tab.model ? tab.model.getLineCount() : 0;
+  barra.innerHTML = `
+    <strong>${escapeHtml(tab.path)}${tab.dirty ? '<span class="editor-dirty" title="Alterações não salvas">●</span>' : ''}</strong>
+    <span class="editor-toolbar-actions">
+      <span>${linhas} linhas · ${formatBytes(tab.size || 0)}</span>
+      <button class="button compact secondary" data-editor-action="save" ${tab.dirty ? '' : 'disabled'} title="Salvar (Ctrl+S)">
+        <i class="ph-duotone ph-floppy-disk"></i>Salvar
+      </button>
+      <button class="button compact secondary" data-editor-action="save-as" title="Salvar como (Ctrl+Shift+S)">
+        <i class="ph-duotone ph-file-plus"></i>Salvar como
+      </button>
+    </span>`;
+}
+
+// Aviso de mudança externa: outro programa, um checkout ou o próprio agente
+// gravou o arquivo que está aberto. Nunca sobrescrevemos em silêncio — o
+// usuário escolhe recarregar (perdendo a edição local) ou manter a versão dele.
+function renderConflitoExterno(tab) {
+  const faixa = $('#editorConflict');
+  if (!faixa) return;
+  if (!tab?.conflitoExterno && !tab?.removidoNoDisco) {
+    faixa.classList.add('hidden');
+    faixa.innerHTML = '';
+    return;
+  }
+  faixa.classList.remove('hidden');
+  faixa.innerHTML = tab.removidoNoDisco
+    ? `<i class="ph-duotone ph-warning"></i><span>Este arquivo não existe mais no disco. Salvar vai recriá-lo.</span>`
+    : `<i class="ph-duotone ph-warning"></i>
+       <span>O arquivo mudou no disco depois que você o abriu.</span>
+       <span class="editor-conflict-actions">
+         <button class="button compact secondary" data-editor-action="reload">Recarregar do disco</button>
+         <button class="button compact secondary" data-editor-action="overwrite">Manter minha versão</button>
+       </span>`;
 }
 
 function renderActiveFile() {
   const viewer = $('#fileViewer');
   if (!viewer) return;
-  const tab = state.openTabs.find((item) => item.path === state.activeTab);
+  const tab = abaAtiva();
 
-  if (!tab) {
-    viewer.innerHTML = '<div class="file-viewer-empty"><i class="ph-duotone ph-file-code"></i><h2>Selecione um arquivo</h2><p>O conteúdo é lido diretamente da pasta aberta e permanece limitado ao projeto.</p></div>';
+  if (!abaEditavel(tab)) {
+    if (editor) editor.setModel(null);
+    if (!tab) {
+      viewer.innerHTML = '<div class="file-viewer-empty"><i class="ph-duotone ph-file-code"></i><h2>Selecione um arquivo</h2><p>O conteúdo é lido e gravado diretamente na pasta aberta e permanece limitado ao projeto.</p></div>';
+      return;
+    }
+    if (tab.kind === 'loading') {
+      viewer.innerHTML = '<div class="file-viewer-empty"><p>Carregando arquivo…</p></div>';
+      return;
+    }
+    if (tab.kind === 'error') {
+      viewer.innerHTML = `<div class="file-viewer-empty"><i class="ph-duotone ph-warning"></i><h2>Não foi possível abrir</h2><p>${escapeHtml(tab.error)}</p></div>`;
+      return;
+    }
+    if (tab.kind === 'image') {
+      viewer.innerHTML = `
+        <div class="file-viewer-toolbar"><strong>${escapeHtml(tab.path)}</strong><span id="imagePreviewMeta">${formatBytes(tab.size)}</span></div>
+        <div class="image-preview"><div class="image-preview-canvas"><img id="imagePreviewImg" src="data:${tab.mime};base64,${tab.base64}" alt="${escapeHtml(tab.path)}"></div></div>`;
+      const img = $('#imagePreviewImg', viewer);
+      img?.addEventListener('load', () => {
+        const meta = $('#imagePreviewMeta', viewer);
+        if (meta) meta.textContent = `${img.naturalWidth}×${img.naturalHeight} · ${formatBytes(tab.size)}`;
+      });
+      return;
+    }
+    viewer.innerHTML = `<div class="file-viewer-empty"><i class="ph-duotone ph-file-lock"></i><h2>Somente leitura</h2><p>${escapeHtml(tab.path)} · ${formatBytes(tab.size)}<br>Arquivos binários não são abertos no editor.</p></div>`;
     return;
   }
-  if (tab.kind === 'loading') {
-    viewer.innerHTML = '<div class="file-viewer-empty"><p>Carregando arquivo…</p></div>';
-    return;
-  }
-  if (tab.kind === 'error') {
-    viewer.innerHTML = `<div class="file-viewer-empty"><i class="ph-duotone ph-warning"></i><h2>Não foi possível abrir</h2><p>${escapeHtml(tab.error)}</p></div>`;
-    return;
-  }
-  if (tab.kind === 'image') {
+
+  // Só reconstruímos a casca quando ela não existe: trocar de aba de texto
+  // não pode destruir o editor (perderia histórico de desfazer e posição).
+  if (!$('#fileEditorHost', viewer)) {
     viewer.innerHTML = `
-      <div class="file-viewer-toolbar"><strong>${escapeHtml(tab.path)}</strong><span id="imagePreviewMeta">${formatBytes(tab.size)}</span></div>
-      <div class="image-preview"><div class="image-preview-canvas"><img id="imagePreviewImg" src="data:${tab.mime};base64,${tab.base64}" alt="${escapeHtml(tab.path)}"></div></div>`;
-    const img = $('#imagePreviewImg', viewer);
-    img?.addEventListener('load', () => {
-      const meta = $('#imagePreviewMeta', viewer);
-      if (meta) meta.textContent = `${img.naturalWidth}×${img.naturalHeight} · ${formatBytes(tab.size)}`;
+      <div class="file-viewer-toolbar" id="fileEditorToolbar"></div>
+      <div class="editor-conflict hidden" id="editorConflict"></div>
+      <div class="editor-host" id="fileEditorHost"></div>`;
+  }
+  renderEditorToolbar(tab);
+  renderConflitoExterno(tab);
+  montarEditor(tab);
+}
+
+async function montarEditor(tab) {
+  const host = $('#fileEditorHost');
+  if (!host) return;
+
+  let monaco;
+  try {
+    monaco = await carregarMonaco();
+  } catch (erro) {
+    host.innerHTML = `<div class="file-viewer-empty"><i class="ph-duotone ph-warning"></i><h2>Editor indisponível</h2><p>${escapeHtml(erro.message)}</p></div>`;
+    return;
+  }
+  if (state.activeTab !== tab.path) return; // o usuário trocou de aba enquanto carregava
+
+  // A casca é recriada quando a aba de arquivos sai e volta; o editor precisa
+  // acompanhar. Os modelos sobrevivem, então o desfazer de cada aba continua.
+  if (editor && editor.getContainerDomNode() !== host) {
+    editor.dispose();
+    editor = null;
+  }
+  if (!editor) {
+    editor = monaco.editor.create(host, {
+      theme: 'jarvis',
+      automaticLayout: true,
+      fontFamily: "'JetBrains Mono', Consolas, monospace",
+      fontSize: 12,
+      lineHeight: 19,
+      minimap: { enabled: false },
+      scrollBeyondLastLine: false,
+      renderWhitespace: 'selection',
+      tabSize: 2,
+      smoothScrolling: true,
+      padding: { top: 10, bottom: 10 },
     });
-    return;
-  }
-  if (tab.kind === 'binary') {
-    viewer.innerHTML = `<div class="file-viewer-empty"><i class="ph-duotone ph-file-lock"></i><h2>Pré-visualização não disponível</h2><p>${escapeHtml(tab.path)} · ${formatBytes(tab.size)}</p></div>`;
-    return;
-  }
-  if (!tab.content) {
-    viewer.innerHTML = `<div class="file-viewer-toolbar"><strong>${escapeHtml(tab.path)}</strong><span>0 linhas · 0 B</span></div><div class="file-viewer-empty"><i class="ph-duotone ph-file-dashed"></i><h2>Arquivo vazio</h2><p>${escapeHtml(tab.path)} não tem conteúdo no disco.</p></div>`;
-    return;
   }
 
-  const lines = tab.content.split('\n');
-  const gutter = lines.map((_, index) => `<span>${index + 1}</span>`).join('');
-  viewer.innerHTML = `
-    <div class="file-viewer-toolbar"><strong>${escapeHtml(tab.path)}</strong><span>${lines.length} linhas · ${formatBytes(tab.size)}</span></div>
-    <div class="code-view"><div class="code-gutter">${gutter}</div><pre class="code-content"><code>${highlightCode(tab.content, tab.path)}</code></pre></div>`;
+  if (!tab.model) {
+    tab.model = monaco.editor.createModel(tab.content ?? '', linguagemDe(tab.path));
+    tab.versaoSalva = tab.model.getAlternativeVersionId();
+    tab.model.onDidChangeContent(() => atualizarSujeira(tab));
+  }
+  editor.setModel(tab.model);
+  if (tab.viewState) editor.restoreViewState(tab.viewState);
+  editor.focus();
+}
+
+function guardarPosicao() {
+  const tab = abaAtiva();
+  if (editor && tab && tab.model && editor.getModel() === tab.model) {
+    tab.viewState = editor.saveViewState();
+  }
 }
 
 async function openFileTab(filePath) {
+  guardarPosicao();
   state.selectedFile = filePath;
   state.activeTab = filePath;
   let tab = state.openTabs.find((item) => item.path === filePath);
-  const alreadyLoaded = Boolean(tab && tab.kind && tab.kind !== 'loading');
+  const jaCarregada = Boolean(tab && tab.kind && tab.kind !== 'loading');
   if (!tab) {
     tab = { path: filePath, kind: 'loading' };
     state.openTabs.push(tab);
@@ -983,11 +1193,12 @@ async function openFileTab(filePath) {
   renderProjectFiles($('#projectFileFilter')?.value || '');
   renderEditorTabs();
   renderActiveFile();
-  if (alreadyLoaded) return;
+  if (jaCarregada) return;
 
   try {
     const payload = await bridge.project.preview({ projectPath: state.project.path, path: filePath });
     Object.assign(tab, payload);
+    if (payload.kind === 'text') tab.hashBase = await hashDoDisco(filePath);
   } catch (error) {
     Object.assign(tab, { kind: 'error', error: error.message });
   }
@@ -995,8 +1206,20 @@ async function openFileTab(filePath) {
   if (state.activeTab === filePath) renderActiveFile();
 }
 
+// O hash vem do backend (mesma função usada pela escrita), então o valor que
+// detecta conflito é exatamente o que a gravação vai comparar.
+async function hashDoDisco(filePath) {
+  try {
+    const info = await bridge.project.stat({ projectPath: state.project.path, path: filePath });
+    return info.hash;
+  } catch {
+    return null;
+  }
+}
+
 function switchFileTab(filePath) {
   if (!state.openTabs.some((tab) => tab.path === filePath)) return;
+  guardarPosicao();
   state.activeTab = filePath;
   state.selectedFile = filePath;
   renderProjectFiles($('#projectFileFilter')?.value || '');
@@ -1004,18 +1227,177 @@ function switchFileTab(filePath) {
   renderActiveFile();
 }
 
-function closeFileTab(filePath) {
+async function closeFileTab(filePath) {
   const index = state.openTabs.findIndex((tab) => tab.path === filePath);
   if (index === -1) return;
+  const tab = state.openTabs[index];
+
+  if (tab.dirty) {
+    const descartar = await confirmDialog({
+      title: 'Descartar alterações?',
+      message: `${filePath} tem alterações que ainda não foram salvas. Fechar a aba descarta essas alterações.`,
+      confirmLabel: 'Descartar',
+      danger: true,
+    });
+    if (!descartar) return;
+  }
+
+  if (editor && tab.model && editor.getModel() === tab.model) editor.setModel(null);
+  tab.model?.dispose();
   state.openTabs.splice(index, 1);
   if (state.activeTab === filePath) {
-    const next = state.openTabs[index] || state.openTabs[index - 1] || null;
-    state.activeTab = next ? next.path : null;
+    const proxima = state.openTabs[index] || state.openTabs[index - 1] || null;
+    state.activeTab = proxima ? proxima.path : null;
     state.selectedFile = state.activeTab;
   }
   renderProjectFiles($('#projectFileFilter')?.value || '');
   renderEditorTabs();
   renderActiveFile();
+}
+
+// Salvar reaproveita a operação da Tarefa 3: confinamento ao workspace,
+// revalidação de links no instante da gravação, hash base contra edição
+// concorrente e gravação atômica. O que muda é o portão de aprovação — aqui
+// quem aprova é o próprio usuário, salvando o arquivo que abriu e editou.
+async function salvarAba(tab, { comoNovo = false } = {}) {
+  if (!abaEditavel(tab) || !tab.model) return;
+  if (tab.salvando) return;
+
+  let destino = tab.path;
+  if (comoNovo) {
+    let escolhido;
+    try {
+      escolhido = await bridge.project.chooseSavePath({ projectPath: state.project.path, path: tab.path });
+    } catch (error) {
+      toast('Salvar como', error.message, 'error');
+      return;
+    }
+    if (!escolhido) return;
+    destino = escolhido.path;
+  }
+
+  tab.salvando = true;
+  const versaoEnviada = tab.model.getAlternativeVersionId();
+  const conteudo = tab.model.getValue();
+  try {
+    const resposta = await bridge.project.save({
+      projectPath: state.project.path,
+      path: destino,
+      content: conteudo,
+      // Em "salvar como" o destino é outro arquivo: não há hash base a
+      // comparar, e o diálogo nativo já confirmou a substituição.
+      baseHash: comoNovo ? null : (tab.conflitoExterno || tab.hashBase),
+    });
+
+    if (resposta.ok === false) {
+      if (resposta.code === 'CONFLITO' || resposta.code === 'CAMINHO_ALTERADO') {
+        tab.conflitoExterno = resposta.hashAtual || null;
+        renderConflitoExterno(tab);
+        renderEditorTabs();
+        toast('Conflito ao salvar', resposta.error, 'error');
+        return;
+      }
+      toast('Falha ao salvar', resposta.error, 'error');
+      return;
+    }
+
+    if (comoNovo) {
+      const aberta = state.openTabs.find((item) => item.path === destino && item !== tab);
+      if (aberta) {
+        aberta.model?.dispose();
+        state.openTabs.splice(state.openTabs.indexOf(aberta), 1);
+      }
+      tab.path = destino;
+      state.activeTab = destino;
+      state.selectedFile = destino;
+      state.explorerChildren.clear(); // o arquivo novo precisa aparecer na árvore
+      initExplorer();
+    }
+
+    tab.hashBase = resposta.hash;
+    tab.size = resposta.size;
+    tab.content = conteudo;
+    tab.versaoSalva = versaoEnviada;
+    tab.conflitoExterno = null;
+    tab.removidoNoDisco = false;
+    tab.dirty = estaSuja(tab);
+    renderEditorTabs();
+    renderEditorToolbar(tab);
+    renderConflitoExterno(tab);
+    log(`editor · ${resposta.tipo} ${tab.path}`);
+    toast('Arquivo salvo', `${tab.path} foi gravado no projeto.`);
+  } catch (error) {
+    toast('Falha ao salvar', error.message, 'error');
+  } finally {
+    tab.salvando = false;
+  }
+}
+
+async function recarregarAbaDoDisco(tab) {
+  if (!abaEditavel(tab)) return;
+  if (tab.dirty) {
+    const descartar = await confirmDialog({
+      title: 'Recarregar do disco?',
+      message: `Suas alterações não salvas em ${tab.path} serão descartadas e substituídas pela versão que está no disco.`,
+      confirmLabel: 'Recarregar',
+      danger: true,
+    });
+    if (!descartar) return;
+  }
+  try {
+    const payload = await bridge.project.preview({ projectPath: state.project.path, path: tab.path });
+    tab.content = payload.content ?? '';
+    tab.size = payload.size;
+    tab.hashBase = await hashDoDisco(tab.path);
+    tab.conflitoExterno = null;
+    tab.removidoNoDisco = false;
+    if (tab.model) {
+      tab.model.setValue(tab.content);
+      tab.versaoSalva = tab.model.getAlternativeVersionId();
+      tab.dirty = false;
+    }
+    renderEditorTabs();
+    if (state.activeTab === tab.path) renderActiveFile();
+  } catch (error) {
+    toast('Falha ao recarregar', error.message, 'error');
+  }
+}
+
+// Compara o hash em disco com o que a aba carregou. Roda quando a janela
+// recupera o foco, ao entrar na aba de arquivos e depois de uma escrita
+// aprovada do agente — os três momentos em que o disco pode ter mudado sem
+// o editor saber.
+async function verificarMudancasExternas() {
+  if (!hasLocalProject()) return;
+  let mudou = false;
+  for (const tab of state.openTabs.filter(abaEditavel)) {
+    try {
+      const info = await bridge.project.stat({ projectPath: state.project.path, path: tab.path });
+      const conflito = info.hash && info.hash !== tab.hashBase ? info.hash : null;
+      if (conflito !== (tab.conflitoExterno || null) || tab.removidoNoDisco) mudou = true;
+      tab.conflitoExterno = conflito;
+      tab.removidoNoDisco = false;
+    } catch {
+      if (!tab.removidoNoDisco) mudou = true;
+      tab.removidoNoDisco = true;
+      tab.conflitoExterno = null;
+    }
+  }
+  if (!mudou) return;
+  renderEditorTabs();
+  const tab = abaAtiva();
+  if (abaEditavel(tab)) renderConflitoExterno(tab);
+}
+
+async function acaoDoEditor(acao) {
+  const tab = abaAtiva();
+  if (!abaEditavel(tab)) return;
+  if (acao === 'save') await salvarAba(tab);
+  if (acao === 'save-as') await salvarAba(tab, { comoNovo: true });
+  if (acao === 'reload') await recarregarAbaDoDisco(tab);
+  // "Manter minha versão": a próxima gravação usa o hash atual do disco como
+  // base, substituindo conscientemente o que está lá em vez de ser recusada.
+  if (acao === 'overwrite') await salvarAba(tab);
 }
 
 function switchNav(nav) {
@@ -1053,6 +1435,7 @@ function switchNav(nav) {
       initExplorer();
       renderEditorTabs();
       renderActiveFile();
+      verificarMudancasExternas();
     }
   }
 }
@@ -1978,7 +2361,14 @@ document.addEventListener('click', async (event) => {
   }
   const closeTabTarget = event.target.closest('[data-close-tab]');
   if (closeTabTarget) {
-    closeFileTab(closeTabTarget.dataset.closeTab);
+    event.stopPropagation(); // fechar nao pode, antes, ativar a aba fechada
+    await closeFileTab(closeTabTarget.dataset.closeTab);
+    return;
+  }
+
+  const editorActionTarget = event.target.closest('[data-editor-action]');
+  if (editorActionTarget) {
+    await acaoDoEditor(editorActionTarget.dataset.editorAction);
     return;
   }
 
@@ -2054,6 +2444,7 @@ document.addEventListener('click', async (event) => {
       }
       appendToolEvent(card.dataset.requestId, outcome.name, outcome.status === 'completed' ? 'Concluída' : 'Recusada', outcome.status === 'completed' ? 'success' : '');
       if (outcome.name === 'terminal_run' && outcome.result) appendTerminalResult(outcome.result);
+      if (outcome.status === 'completed') verificarMudancasExternas();
       log(`tool · ${outcome.name || 'ação'} ${outcome.status}`);
       continueAfterTool(outcome);
     } catch (error) {
@@ -2206,9 +2597,30 @@ $('#modelPicker').addEventListener('click', () => {
 
 document.addEventListener('keydown', (event) => {
   if (!event.ctrlKey) return;
-  if (event.key.toLowerCase() === 'o') { event.preventDefault(); openProject(); }
-  if (event.key.toLowerCase() === 'n') { event.preventDefault(); newChat(); }
+  const tecla = event.key.toLowerCase();
+
+  // Atalhos do editor valem mesmo com o foco dentro do Monaco: ele nao ocupa
+  // Ctrl+S nem Ctrl+W, entao o evento chega ate' aqui normalmente.
+  if (state.nav === 'files') {
+    if (tecla === 's') {
+      event.preventDefault();
+      acaoDoEditor(event.shiftKey ? 'save-as' : 'save');
+      return;
+    }
+    if (tecla === 'w' && state.activeTab) {
+      event.preventDefault();
+      closeFileTab(state.activeTab);
+      return;
+    }
+  }
+
+  if (tecla === 'o') { event.preventDefault(); openProject(); }
+  if (tecla === 'n') { event.preventDefault(); newChat(); }
 });
+
+// O disco pode mudar sem o editor saber: outro programa, um checkout, ou o
+// proprio agente gravando um arquivo aberto.
+window.addEventListener('focus', () => { verificarMudancasExternas(); });
 
 function getModelDotColor(modelName) {
   const lower = String(modelName || '').toLowerCase();

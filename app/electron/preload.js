@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld('jarvis', {
     readFile: (payload) => ipcRenderer.invoke('project:read-file', payload),
     tree: (payload) => ipcRenderer.invoke('project:tree', payload),
     preview: (payload) => ipcRenderer.invoke('project:preview', payload),
+    save: (payload) => ipcRenderer.invoke('project:save', payload),
+    stat: (payload) => ipcRenderer.invoke('project:stat', payload),
+    chooseSavePath: (payload) => ipcRenderer.invoke('project:choose-save-path', payload),
   },
   attachments: {
     pick: () => ipcRenderer.invoke('attachments:pick'),

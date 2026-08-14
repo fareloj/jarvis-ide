@@ -8,3 +8,5 @@ conversation-memory/*
 !conversation-memory/.gitkeep
 usage/*
 !usage/.gitkeep
+backups/*
+!backups/.gitkeep

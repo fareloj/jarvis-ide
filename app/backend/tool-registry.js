@@ -264,6 +264,42 @@ async function previewProjectFile(projectPath, relativePath) {
   return { path: relative, kind: 'binary', size: stat.size };
 }
 
+// Escrita vinda do editor, nao do agente. O portao de aprovacao aqui e' o
+// proprio usuario salvando o arquivo que ele abriu e editou; o resto da
+// fronteira continua sendo a mesma da Tarefa 3 -- confinamento ao workspace,
+// revalidacao de links, hash base contra edicao concorrente e gravacao atomica.
+async function saveProjectFile({ projectPath, path: relativePath, content, baseHash } = {}) {
+  const plano = await fileWrite.planWrite({ projectPath, path: relativePath, content, baseHash });
+  const aplicado = await fileWrite.applyWrite(plano);
+  return {
+    path: aplicado.path,
+    tipo: aplicado.tipo,
+    hash: plano.hashNovo,
+    backupId: aplicado.backupId,
+    size: Buffer.byteLength(plano.conteudo, 'utf8'),
+  };
+}
+
+// Estado atual do arquivo em disco, para o editor detectar que alguem (outro
+// programa, um git checkout, o proprio agente) mexeu no arquivo aberto.
+async function statProjectFile(projectPath, relativePath) {
+  const { target, relative } = resolveProjectTarget(projectPath, relativePath);
+  const stat = await fs.stat(target);
+  if (!stat.isFile()) throw new Error('O caminho informado nao é um arquivo.');
+  const kind = classifyFile(target);
+  if (kind !== 'text' || stat.size > MAX_TEXT_PREVIEW_BYTES) {
+    return { path: relative, kind, size: stat.size, mtimeMs: stat.mtimeMs, hash: null };
+  }
+  const conteudo = await fs.readFile(target, 'utf8');
+  return {
+    path: relative,
+    kind,
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+    hash: fileWrite.hashOf(conteudo),
+  };
+}
+
 const DELEGATE_TIMEOUT_MS = 5 * 60_000;
 const DELEGATE_BINARIES = { 'claude-code': 'claude', codex: 'codex', antigravity: 'agy' };
 const DELEGATE_LABELS = { 'claude-code': 'Claude Code', codex: 'Codex CLI', antigravity: 'Antigravity CLI' };
@@ -510,4 +546,5 @@ module.exports = {
   fileWrite, describeTools,
   runCli, listProjectDirectory, previewProjectFile, publicDefinitions,
   requestTool, resolveApproval, resolveProjectTarget, runTool,
+  saveProjectFile, statProjectFile,
 };

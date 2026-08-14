@@ -8,10 +8,16 @@
          arquivos, disparar tools, cookie de quota). script-src 'self' impede
          que HTML injetado em conteúdo de arquivo vire script executável.
          'unsafe-inline' fica só em style-src porque a UI usa style="..."
-         em vários pontos; data: em img-src é para as miniaturas de anexo. -->
+         em vários pontos; data: em img-src é para as miniaturas de anexo.
+         O editor de código exige mais duas aberturas, ambas verificadas: o
+         Monaco embute a fonte de ícones como data: (font-src data:) e roda os
+         serviços de linguagem em web worker criado a partir de um blob
+         (worker-src blob:). Nenhuma das duas torna HTML injetado executável —
+         um worker não tem DOM nem acesso a window.jarvis, e criar o blob já
+         exige script rodando, o que script-src 'self' continua barrando. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-src 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; worker-src blob:; object-src 'none'; base-uri 'none'; frame-src 'none'"
     />
     <title>JARVIS</title>
     <link rel="stylesheet" href="../node_modules/@phosphor-icons/web/src/duotone/style.css" />

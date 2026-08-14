@@ -493,6 +493,29 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
         return;
       }
 
+      if (request.method === 'POST' && request.url === '/api/project/save') {
+        const body = await readJson(request, 5_000_000);
+        try {
+          sendJson(response, 200, await tools.saveProjectFile(body));
+        } catch (error) {
+          // Conflito nao e' falha do backend: o arquivo mudou no disco depois
+          // que o editor o abriu. O 409 deixa a interface oferecer recarregar
+          // ou sobrescrever em vez de mostrar um erro generico.
+          if (error?.code === 'CONFLITO' || error?.code === 'CAMINHO_ALTERADO') {
+            sendJson(response, 409, { error: error.message, code: error.code, hashAtual: error.hashAtual ?? null });
+            return;
+          }
+          throw error;
+        }
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/project/stat') {
+        const body = await readJson(request);
+        sendJson(response, 200, await tools.statProjectFile(body.projectPath, body.path));
+        return;
+      }
+
       if (request.method === 'POST' && request.url === '/api/rag/notes') {
         const body = await readJson(request);
         const note = await saveNote(body);

@@ -5,7 +5,7 @@ const path = require('node:path');
 const test = require('node:test');
 const {
   delegateCodingTask, listProjectDirectory, previewProjectFile, publicDefinitions, requestTool, resolveApproval,
-  resolveProjectTarget, runCli,
+  resolveProjectTarget, runCli, saveProjectFile, statProjectFile,
 } = require('./tool-registry');
 
 const ehWindows = process.platform === 'win32';
@@ -177,4 +177,76 @@ test('busca web entrega fontes estruturadas ao agente', async (context) => {
   assert.deepEqual(outcome.result.results, [{
     title: 'Documentação', url: 'https://example.com/docs', snippet: 'Referência & exemplo.',
   }]);
+});
+
+test('salvar pelo editor grava, devolve o hash e detecta edição concorrente', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-editor-'));
+  await fs.writeFile(path.join(root, 'app.js'), 'const a = 1;\n', 'utf8');
+
+  const antes = await statProjectFile(root, 'app.js');
+  assert.equal(antes.kind, 'text');
+  assert.ok(antes.hash, 'o editor precisa de um hash base para detectar conflito');
+
+  const salvo = await saveProjectFile({
+    projectPath: root, path: 'app.js', content: 'const a = 2;\n', baseHash: antes.hash,
+  });
+  assert.equal(salvo.tipo, 'atualizar');
+  assert.equal(await fs.readFile(path.join(root, 'app.js'), 'utf8'), 'const a = 2;\n');
+
+  const depois = await statProjectFile(root, 'app.js');
+  assert.equal(depois.hash, salvo.hash, 'o hash devolvido é o que o disco passa a ter');
+
+  // Alguém mexe no arquivo enquanto a aba continua com o hash antigo.
+  await fs.writeFile(path.join(root, 'app.js'), 'editado por fora\n', 'utf8');
+  await assert.rejects(
+    saveProjectFile({ projectPath: root, path: 'app.js', content: 'const a = 3;\n', baseHash: salvo.hash }),
+    (erro) => erro.code === 'CONFLITO',
+  );
+  assert.equal(
+    await fs.readFile(path.join(root, 'app.js'), 'utf8'),
+    'editado por fora\n',
+    'conflito não pode sobrescrever a edição de terceiro',
+  );
+
+  await fs.rm(root, { recursive: true, force: true });
+});
+
+test('salvar pelo editor herda a fronteira da escrita do agente', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-editor-limite-'));
+
+  await assert.rejects(
+    saveProjectFile({ projectPath: root, path: '../fora.txt', content: 'x' }),
+    /sai do projeto/i,
+  );
+  await assert.rejects(
+    saveProjectFile({ projectPath: root, path: 'C:/Windows/system32/x.txt', content: 'x' }),
+    /caminho relativo/i,
+  );
+  await assert.rejects(
+    saveProjectFile({ projectPath: root, path: 'programa.exe', content: 'x' }),
+    /Extensão não permitida/i,
+  );
+
+  // Arquivo novo criado pelo "salvar como" continua valendo.
+  const criado = await saveProjectFile({ projectPath: root, path: 'novo/doc.md', content: '# oi\n', baseHash: null });
+  assert.equal(criado.tipo, 'criar');
+  assert.equal(await fs.readFile(path.join(root, 'novo', 'doc.md'), 'utf8'), '# oi\n');
+
+  await fs.rm(root, { recursive: true, force: true });
+});
+
+test('arquivo binário e arquivo grande não recebem hash de edição', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-editor-grande-'));
+  await fs.writeFile(path.join(root, 'app.exe'), Buffer.from([0x4d, 0x5a]));
+  await fs.writeFile(path.join(root, 'enorme.txt'), 'x'.repeat(900_000), 'utf8');
+
+  const binario = await statProjectFile(root, 'app.exe');
+  assert.equal(binario.kind, 'binary');
+  assert.equal(binario.hash, null, 'binário não entra no editor, então não tem hash base');
+
+  const grande = await statProjectFile(root, 'enorme.txt');
+  assert.equal(grande.hash, null, 'acima do limite de pré-visualização o editor não abre o arquivo');
+  await assert.rejects(previewProjectFile(root, 'enorme.txt'), /grande demais/i);
+
+  await fs.rm(root, { recursive: true, force: true });
 });

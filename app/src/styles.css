@@ -598,6 +598,20 @@ kbd { padding: 1px 4px; border: 1px solid var(--line); border-bottom-width: 2px;
 .file-viewer-toolbar strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 10px var(--font-mono); color: var(--ink-2); }
 .file-viewer-toolbar span { flex: none; margin-left: 10px; font: 10px var(--font-mono); color: var(--ink-5); }
 
+/* Editor de codigo (Monaco). Mantem o mesmo bloco escuro do visualizador
+   anterior: a aba de arquivos nao muda de identidade ao virar editor. */
+.editor-host { flex: 1; min-height: 0; background: var(--terminal); }
+.editor-toolbar-actions { display: flex; align-items: center; gap: 8px; }
+.editor-toolbar-actions > span { margin-left: 0; }
+.editor-dirty { margin-left: 6px; color: var(--cyan-dark); font-size: 13px; line-height: 1; }
+.file-tab.dirty { color: var(--ink-2); }
+.file-tab.dirty .file-tab-close i { font-size: 8px; color: var(--cyan-dark); }
+.file-tab.dirty:hover .file-tab-close i { font-size: 8px; color: var(--danger); }
+.file-tab.conflito { box-shadow: inset 0 2px 0 var(--warning); }
+.editor-conflict { flex: none; display: flex; align-items: center; gap: 9px; padding: 8px 13px; border-bottom: 1px solid var(--line); background: #fff6e0; color: var(--ink-2); font-size: 11.5px; }
+.editor-conflict > i { color: #b07d00; font-size: 15px; flex: none; }
+.editor-conflict-actions { display: flex; gap: 6px; margin-left: auto; flex: none; }
+
 .code-view { flex: 1; min-height: 0; display: flex; overflow-y: auto; overflow-x: hidden; background: var(--terminal); }
 .code-gutter { flex: none; padding: 12px 12px 12px 14px; text-align: right; color: #6b6864; font: 11px/1.6 var(--font-mono); user-select: none; }
 .code-gutter span { display: block; }
