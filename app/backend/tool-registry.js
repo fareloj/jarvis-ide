@@ -529,15 +529,18 @@ async function resolveApproval(id, approved) {
   const pending = pendingApprovals.get(String(id || ''));
   if (!pending) throw new Error('Aprovação inexistente ou expirada.');
   pendingApprovals.delete(pending.id);
-  if (!approved) return { status: 'denied', name: pending.name };
+  const runtime = pending.context?.runId
+    ? { runId: pending.context.runId, args: pending.args }
+    : null;
+  if (!approved) return { status: 'denied', name: pending.name, _runtime: runtime };
 
   if (pending.plano) {
     // Transacional: se um arquivo do patch falhar, os anteriores voltam ao
     // estado original em vez de deixar meia mudanca aplicada.
     const aplicados = await fileWrite.applyPatch(pending.plano.planos);
-    return { status: 'completed', name: pending.name, result: { arquivos: aplicados } };
+    return { status: 'completed', name: pending.name, result: { arquivos: aplicados }, _runtime: runtime };
   }
-  return { status: 'completed', name: pending.name, result: await runTool(pending.name, pending.args, pending.context) };
+  return { status: 'completed', name: pending.name, result: await runTool(pending.name, pending.args, pending.context), _runtime: runtime };
 }
 
 module.exports = {

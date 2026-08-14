@@ -19,7 +19,7 @@ const {
   defaultCheckpointStore,
   defaultJobQueue,
   safeRetry,
-  isIdempotentTool,
+  assertRunId,
 } = require('./agent-runtime');
 
 const DEFAULT_MODEL = process.env.JARVIS_OLLAMA_MODEL || 'gpt-oss:120b-cloud';
@@ -138,13 +138,17 @@ const skillReview = createSkillReview({
 async function streamChat(messages, model, runId, clientResponse, abortController, options = {}) {
   skillReview.cancelReview(options.sessionId);
   const maxTurns = Math.min(Math.max(Number(options.maxTurns) || DEFAULT_BUDGET.maxTurns, 1), 50);
-  const maxContextChars = Number(options.maxContextChars) || DEFAULT_BUDGET.maxContextChars;
+  const maxContextChars = Math.min(Math.max(Number(options.maxContextChars) || DEFAULT_BUDGET.maxContextChars, 4_000), 500_000);
+  const maxDurationMs = Math.min(Math.max(Number(options.maxDurationMs) || DEFAULT_BUDGET.maxDurationMs, 10_000), 30 * 60_000);
+  const deadline = Date.now() + maxDurationMs;
+  const runSignal = AbortSignal.any([abortController.signal, AbortSignal.timeout(maxDurationMs)]);
 
   defaultJobQueue.createJob({
     runId,
     type: 'agent_chat',
     projectPath: options.projectPath,
     metadata: { model, sessionId: options.sessionId, sessionTitle: options.sessionTitle },
+    abortController,
   });
 
   let conversation = normalizeMessages(messages);
@@ -188,6 +192,8 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
   });
 
   let doneSent = false;
+  let runFailed = false;
+  let awaitingApproval = false;
   let finalAssistantContent = '';
   const runMetrics = { toolCalls: 0, toolResults: 0, toolFailures: 0, turnsUsed: 0 };
   const emit = (type, payload) => {
@@ -197,6 +203,12 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
   };
 
   for (let turn = 0; turn < maxTurns && !doneSent; turn += 1) {
+    if (Date.now() >= deadline) {
+      emit(EVENT_TYPES.RUN_FAILED, { error: `O agente excedeu o limite de tempo de ${maxDurationMs} ms.` });
+      runFailed = true;
+      doneSent = true;
+      break;
+    }
     runMetrics.turnsUsed = turn + 1;
     conversation = compactConversation(conversation, { maxChars: maxContextChars });
 
@@ -210,7 +222,7 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
           stream: true,
           tools: options.toolsEnabled === false ? undefined : tools.publicDefinitions(),
         }),
-        signal: AbortSignal.any([abortController.signal, AbortSignal.timeout(180_000)]),
+        signal: AbortSignal.any([runSignal, AbortSignal.timeout(Math.min(180_000, Math.max(1, deadline - Date.now())))]),
       });
       if (!res.ok) {
         const payload = await res.json().catch(() => ({}));
@@ -219,7 +231,7 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
         throw err;
       }
       return res;
-    }, { maxRetries: 2, initialDelayMs: 250, signal: abortController.signal });
+    }, { maxRetries: 2, initialDelayMs: 250, signal: runSignal });
 
     const decoder = new TextDecoder();
     let pending = '';
@@ -258,12 +270,12 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
       if (typeof args === 'string') args = JSON.parse(args || '{}');
       emit(EVENT_TYPES.TOOL_REQUESTED, { name, args });
 
-      // Idempotency check: se a tool pura já foi executada para este runId com estes mesmos argumentos, reuse resultado
+      // Uma tool já concluída nunca é repetida após retomada, inclusive mutações.
       const cachedExecution = await defaultCheckpointStore.hasExecutedTool(runId, name, args);
-      if (cachedExecution && isIdempotentTool(name)) {
+      if (cachedExecution) {
         runMetrics.toolResults += 1;
         const result = JSON.stringify(cachedExecution.result).slice(0, 120_000);
-        emit(EVENT_TYPES.TOOL_RESULT, { name, result: cachedExecution.result, fromCache: true });
+        emit(EVENT_TYPES.TOOL_RESULT, { name, result: cachedExecution.result, fromCheckpoint: true });
         conversation.push({ role: 'tool', tool_name: name, content: result });
         continue;
       }
@@ -271,11 +283,13 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
       const outcome = await tools.requestTool(name, args, {
         projectPath: options.projectPath,
         corpus: options.corpus,
-        signal: abortController.signal,
+        signal: runSignal,
+        runId,
       });
 
       if (outcome.status === 'approval_required') {
         approvalRequired = true;
+        awaitingApproval = true;
         emit(EVENT_TYPES.APPROVAL_REQUIRED, outcome.approval);
         continue;
       }
@@ -306,12 +320,23 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
     }
   }
 
+  let finalStatus;
   if (!doneSent) {
     emit(EVENT_TYPES.RUN_FAILED, { error: `O agente excedeu o limite configurado de ${maxTurns} rodadas.` });
-    defaultJobQueue.completeJob(runId, 'failed');
+    finalStatus = 'failed';
+  } else if (runFailed) {
+    finalStatus = 'failed';
+  } else if (awaitingApproval) {
+    finalStatus = 'awaiting_approval';
   } else {
-    defaultJobQueue.completeJob(runId, 'completed');
+    finalStatus = 'completed';
   }
+  defaultJobQueue.completeJob(runId, finalStatus);
+  await defaultCheckpointStore.saveCheckpoint(runId, {
+    status: finalStatus,
+    metrics: runMetrics,
+    completedAt: new Date().toISOString(),
+  }).catch(() => {});
 
   // Grava o turno na memória semântica depois de responder, para que outras
   // conversas possam recuperá-lo. Falha aqui não afeta a resposta já entregue.
@@ -484,7 +509,21 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
 
       if (request.method === 'POST' && request.url === '/api/tools/approval') {
         const body = await readJson(request);
-        sendJson(response, 200, await tools.resolveApproval(body.id, body.approved === true));
+        const outcome = await tools.resolveApproval(body.id, body.approved === true);
+        const runtime = outcome._runtime;
+        delete outcome._runtime;
+        if (runtime?.runId) {
+          if (outcome.status === 'completed') {
+            await defaultCheckpointStore.recordExecutedTool(runtime.runId, outcome.name, runtime.args, outcome.result);
+          }
+          const status = outcome.status === 'completed' ? 'completed' : 'denied';
+          await defaultCheckpointStore.saveCheckpoint(runtime.runId, {
+            status: outcome.status === 'completed' ? 'completed_after_approval' : 'approval_denied',
+            approvalResolvedAt: new Date().toISOString(),
+          });
+          defaultJobQueue.completeJob(runtime.runId, status);
+        }
+        sendJson(response, 200, outcome);
         return;
       }
 
@@ -679,6 +718,7 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
 
       if (request.method === 'POST' && request.url === '/api/agent/checkpoints') {
         const body = await readJson(request);
+        assertRunId(body.runId);
         sendJson(response, 200, { checkpoint: await defaultCheckpointStore.getCheckpoint(body.runId) });
         return;
       }
@@ -704,6 +744,7 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
         const body = await readJson(request, 25_000_000); // imagens anexadas em base64 podem passar de 1 MB fácil
         runId = typeof body.runId === 'string' && body.runId ? body.runId : null;
         if (!runId) throw new Error('runId é obrigatório para streaming.');
+        assertRunId(runId);
         const abortController = new AbortController();
         response.once('close', () => {
           if (!response.writableEnded) abortController.abort();
@@ -717,12 +758,24 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
           sessionId: body.sessionId,
           sessionTitle: body.sessionTitle,
           conversationMemoryEnabled: body.conversationMemoryEnabled,
+          maxTurns: body.maxTurns,
+          maxContextChars: body.maxContextChars,
+          maxDurationMs: body.maxDurationMs,
         });
         return;
       }
 
       sendJson(response, 404, { error: 'Rota não encontrada.' });
     } catch (error) {
+      if (runId) {
+        const status = error?.name === 'AbortError' ? 'cancelled' : 'failed';
+        defaultJobQueue.completeJob(runId, status);
+        await defaultCheckpointStore.saveCheckpoint(runId, {
+          status,
+          failedAt: new Date().toISOString(),
+          error: error?.message || 'Falha inesperada no backend.',
+        }).catch(() => {});
+      }
       const message = error?.name === 'TimeoutError'
         ? 'O modelo excedeu o tempo limite da requisição.'
         : error?.message || 'Falha inesperada no backend.';

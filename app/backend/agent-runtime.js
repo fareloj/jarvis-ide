@@ -79,12 +79,22 @@ function redactSecrets(input) {
 }
 
 function sortObjectKeys(obj) {
-  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+  if (!obj || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map((item) => sortObjectKeys(item));
   const sorted = {};
   for (const key of Object.keys(obj).sort()) {
     sorted[key] = sortObjectKeys(obj[key]);
   }
   return sorted;
+}
+
+function assertRunId(runId) {
+  if (typeof runId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$/.test(runId)) {
+    const error = new Error('runId inválido.');
+    error.code = 'INVALID_RUN_ID';
+    throw error;
+  }
+  return runId;
 }
 
 function getIdempotencyKey(runId, toolName, args = {}) {
@@ -143,7 +153,7 @@ async function safeRetry(asyncFn, {
   for (;;) {
     try {
       if (signal?.aborted) {
-        throw new Error('Operação cancelada antes da execução.');
+        throw signal.reason || Object.assign(new Error('Operação cancelada antes da execução.'), { name: 'AbortError' });
       }
       return await asyncFn();
     } catch (error) {
@@ -152,12 +162,16 @@ async function safeRetry(asyncFn, {
         throw error;
       }
       await new Promise((resolve, reject) => {
-        const timer = setTimeout(resolve, delay);
+        const onAbort = () => {
+          clearTimeout(timer);
+          reject(signal?.reason || Object.assign(new Error('Operação cancelada durante retry.'), { name: 'AbortError' }));
+        };
+        const timer = setTimeout(() => {
+          signal?.removeEventListener('abort', onAbort);
+          resolve();
+        }, delay);
         if (signal) {
-          signal.addEventListener('abort', () => {
-            clearTimeout(timer);
-            reject(new Error('Operação cancelada durante retry.'));
-          }, { once: true });
+          signal.addEventListener('abort', onAbort, { once: true });
         }
       });
       delay = delay * 2;
@@ -177,8 +191,10 @@ function compactConversation(messages, { maxChars = DEFAULT_BUDGET.maxContextCha
   const systemMessages = messages.filter((m) => m.role === 'system');
   const nonSystemMessages = messages.filter((m) => m.role !== 'system');
 
+  const safeMaxChars = Math.min(Math.max(Number(maxChars) || DEFAULT_BUDGET.maxContextChars, 4_000), 500_000);
+  const safePreserveRecent = Math.min(Math.max(Number(preserveRecent) || 6, 2), 20);
   const totalChars = messages.reduce((acc, m) => acc + (m.content?.length || 0), 0);
-  if (totalChars <= maxChars || nonSystemMessages.length <= preserveRecent + 1) {
+  if (totalChars <= safeMaxChars || nonSystemMessages.length <= safePreserveRecent + 1) {
     return messages;
   }
 
@@ -187,31 +203,37 @@ function compactConversation(messages, { maxChars = DEFAULT_BUDGET.maxContextCha
   const firstUserMessage = firstUserIdx !== -1 ? nonSystemMessages[firstUserIdx] : null;
 
   // Preserva os últimos N turnos recentes
-  const recentMessages = nonSystemMessages.slice(-preserveRecent);
+  const recentMessages = nonSystemMessages.slice(-safePreserveRecent);
 
   // Mensagens intermediárias que serão compactadas
-  const intermediateMessages = nonSystemMessages.slice(firstUserIdx !== -1 ? firstUserIdx + 1 : 0, -preserveRecent);
+  const intermediateMessages = nonSystemMessages.slice(firstUserIdx !== -1 ? firstUserIdx + 1 : 0, -safePreserveRecent);
 
   let toolCallsSummaryCount = 0;
   let toolResultsSummaryCount = 0;
-  const summarizedSnippets = [];
+  const priorUserRequirements = [];
 
   for (const msg of intermediateMessages) {
     if (msg.tool_calls) toolCallsSummaryCount += msg.tool_calls.length;
     if (msg.role === 'tool') toolResultsSummaryCount += 1;
-    if (msg.role === 'assistant' && msg.content) {
-      summarizedSnippets.push(msg.content.slice(0, 150));
+    if (msg.role === 'user' && msg.content) {
+      priorUserRequirements.push(String(msg.content).slice(0, 1_000));
     }
   }
 
   const compactSummaryMessage = {
     role: 'system',
-    content: `[Resumo determinístico de turnos intermediários: ${toolCallsSummaryCount} tool(s) executadas, ${toolResultsSummaryCount} resultado(s) processados. Passos anteriores: ${summarizedSnippets.slice(0, 3).join('; ')}]`,
+    content: `Resumo estrutural: ${toolCallsSummaryCount} tool(s) solicitadas e ${toolResultsSummaryCount} resultado(s) processados. Nenhum conteúdo de tool ou do modelo foi promovido a instrução de sistema.`,
   };
 
   const compacted = [...systemMessages];
   if (firstUserMessage) compacted.push(firstUserMessage);
   compacted.push(compactSummaryMessage);
+  if (priorUserRequirements.length) {
+    compacted.push({
+      role: 'user',
+      content: `Solicitações anteriores do usuário que continuam fazendo parte do contexto:\n${JSON.stringify(priorUserRequirements.slice(-12))}`,
+    });
+  }
   compacted.push(...recentMessages);
 
   return compacted;
@@ -220,22 +242,34 @@ function compactConversation(messages, { maxChars = DEFAULT_BUDGET.maxContextCha
 class CheckpointStore {
   constructor(storageDir = CHECKPOINT_DIR) {
     this.storageDir = storageDir;
+    this.writeQueues = new Map();
   }
 
   async getCheckpointPath(runId) {
-    return path.join(this.storageDir, `${runId}.json`);
+    return path.join(this.storageDir, `${assertRunId(runId)}.json`);
   }
 
-  async saveCheckpoint(runId, data) {
-    if (!runId) throw new Error('runId é obrigatório para salvar checkpoint.');
+  async withRunLock(runId, operation) {
+    assertRunId(runId);
+    const previous = this.writeQueues.get(runId) || Promise.resolve();
+    const current = previous.catch(() => {}).then(operation);
+    this.writeQueues.set(runId, current);
+    try {
+      return await current;
+    } finally {
+      if (this.writeQueues.get(runId) === current) this.writeQueues.delete(runId);
+    }
+  }
+
+  async saveCheckpointUnlocked(runId, data) {
     await fs.mkdir(this.storageDir, { recursive: true });
 
     const sanitizedData = redactSecrets(data);
     const checkpoint = {
+      ...sanitizedData,
       version: CHECKPOINT_VERSION,
       runId,
       updatedAt: new Date().toISOString(),
-      ...sanitizedData,
     };
 
     const targetPath = await this.getCheckpointPath(runId);
@@ -243,8 +277,23 @@ class CheckpointStore {
     return checkpoint;
   }
 
+  async saveCheckpoint(runId, data) {
+    return this.withRunLock(runId, async () => {
+      const existing = await this.getCheckpoint(runId);
+      const merged = {
+        ...(existing || {}),
+        ...(data || {}),
+        executedTools: {
+          ...(existing?.executedTools || {}),
+          ...(data?.executedTools || {}),
+        },
+      };
+      return this.saveCheckpointUnlocked(runId, merged);
+    });
+  }
+
   async getCheckpoint(runId) {
-    if (!runId) return null;
+    assertRunId(runId);
     try {
       const targetPath = await this.getCheckpointPath(runId);
       const raw = await fs.readFile(targetPath, 'utf8');
@@ -255,23 +304,23 @@ class CheckpointStore {
   }
 
   async recordExecutedTool(runId, toolName, args, result) {
-    const key = getIdempotencyKey(runId, toolName, args);
-    const existing = (await this.getCheckpoint(runId)) || {
-      runId,
-      createdAt: new Date().toISOString(),
-      executedTools: {},
-    };
-
-    existing.executedTools = existing.executedTools || {};
-    existing.executedTools[key] = {
-      name: toolName,
-      key,
-      executedAt: new Date().toISOString(),
-      result: redactSecrets(result),
-    };
-
-    await this.saveCheckpoint(runId, existing);
-    return key;
+    return this.withRunLock(runId, async () => {
+      const key = getIdempotencyKey(runId, toolName, args);
+      const existing = (await this.getCheckpoint(runId)) || {
+        runId,
+        createdAt: new Date().toISOString(),
+        executedTools: {},
+      };
+      existing.executedTools = existing.executedTools || {};
+      existing.executedTools[key] = {
+        name: toolName,
+        key,
+        executedAt: new Date().toISOString(),
+        result: redactSecrets(result),
+      };
+      await this.saveCheckpointUnlocked(runId, existing);
+      return key;
+    });
   }
 
   async hasExecutedTool(runId, toolName, args) {
@@ -287,7 +336,9 @@ class JobQueue {
     this.jobs = new Map(); // runId -> JobInfo
   }
 
-  createJob({ runId, type = 'agent_run', projectPath, metadata = {} }) {
+  createJob({ runId, type = 'agent_run', projectPath, metadata = {}, abortController = null }) {
+    assertRunId(runId);
+    if (this.jobs.get(runId)?.status === 'running') throw new Error('Já existe um job ativo com este runId.');
     const job = {
       runId,
       type,
@@ -298,7 +349,7 @@ class JobQueue {
       metadata,
       events: [],
       pids: new Set(),
-      abortController: new AbortController(),
+      abortController: abortController || new AbortController(),
     };
     this.jobs.set(runId, job);
     return job;
@@ -324,6 +375,7 @@ class JobQueue {
     const job = this.jobs.get(runId);
     if (job) {
       job.events.push(event);
+      if (job.events.length > 1_000) job.events.splice(0, job.events.length - 1_000);
       job.updatedAt = new Date().toISOString();
     }
   }
@@ -368,6 +420,7 @@ module.exports = {
   DEFAULT_BUDGET,
   IDEMPOTENT_TOOLS,
   redactSecrets,
+  assertRunId,
   getIdempotencyKey,
   isIdempotentTool,
   isTransientError,

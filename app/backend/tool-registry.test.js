@@ -155,6 +155,15 @@ test('tool de escrita exige aprovação explícita', async () => {
   await fs.rm(root, { recursive: true, force: true });
 });
 
+test('aprovação devolve metadados internos do runtime para checkpoint', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-tool-runtime-'));
+  const args = { title: 'Teste', content: 'Persistir.' };
+  const pending = await requestTool('memory_save', args, { projectPath: root, runId: 'runtime-approval-123' });
+  const denied = await resolveApproval(pending.approval.id, false);
+  assert.deepEqual(denied._runtime, { runId: 'runtime-approval-123', args });
+  await fs.rm(root, { recursive: true, force: true });
+});
+
 test('busca web entrega fontes estruturadas ao agente', async (context) => {
   const originalFetch = global.fetch;
   const originalProvider = process.env.JARVIS_WEB_SEARCH_PROVIDER;
