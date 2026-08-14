@@ -41,8 +41,8 @@ Não misture refatorações oportunistas, mudanças visuais e funcionalidades n�
 | 5 | Transformar o visualizador em editor | Claude Code | A | CONCLUÍDA | 3–4 |
 | 6 | Implementar integração Git e Diff | Claude Code | A | CONCLUÍDA | 5 |
 | Gate | Revisar e integrar a Fase A na `main` | Codex | Integração | CONCLUÍDA | 0–6 |
-| 7 | Implementar terminal interativo PTY | Gemini | B | EM ANDAMENTO | Gate |
-| 8 | Implementar Problems e busca global | Gemini | B | PENDENTE | 7 |
+| 7 | Implementar terminal interativo PTY | Gemini | B | CONCLUÍDA | Gate |
+| 8 | Implementar Problems e busca global | Gemini | B | EM ANDAMENTO | 7 |
 | 9 | Robustecer o runtime agentic | Gemini | B | PENDENTE | 7–8 |
 | 10 | Completar o sistema de skills | Codex | B | PENDENTE | 9 |
 | 11 | Melhorar ciclo de vida do RAG | Codex | B | PENDENTE | 9 |
