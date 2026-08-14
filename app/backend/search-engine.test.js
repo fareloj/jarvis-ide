@@ -130,6 +130,8 @@ test('substituição planeja patch com preview e aplica transacionalmente em mú
 
   assert.equal(plan.fileCount, 2);
   assert.equal(plan.totalMatches, 2);
+  assert.ok(plan.planId);
+  assert.equal(plan.planos, undefined);
   assert.ok(plan.diff.includes('-const nome = "antigo_valor";'));
   assert.ok(plan.diff.includes('+const nome = "novo_valor";'));
 
@@ -137,7 +139,7 @@ test('substituição planeja patch com preview e aplica transacionalmente em mú
   assert.equal(await fs.readFile(path.join(tempDir, 'src', 'file1.js'), 'utf8'), 'const nome = "antigo_valor";\n');
 
   // 2. Aplica o patch transacionalmente
-  const applied = await applySearchReplace(plan.planos);
+  const applied = await applySearchReplace({ planId: plan.planId });
   assert.equal(applied.length, 2);
 
   // Confirma que os arquivos foram atualizados no disco
@@ -163,6 +165,37 @@ test('substituição com regex suporta grupos de captura', async (t) => {
   assert.equal(plan.fileCount, 1);
   assert.ok(plan.diff.includes('+const id = "account_12345";'));
 
-  await applySearchReplace(plan.planos);
+  await applySearchReplace({ planId: plan.planId });
   assert.equal(await fs.readFile(path.join(tempDir, 'sample.js'), 'utf8'), 'const id = "account_12345";\n');
+});
+
+test('recusa plano forjado, acesso de outro contexto e reutilização', async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-plan-vault-'));
+  t.after(async () => fs.rm(tempDir, { recursive: true, force: true }).catch(() => {}));
+  await fs.writeFile(path.join(tempDir, 'a.js'), 'const value = "old";\n', 'utf8');
+
+  await assert.rejects(
+    applySearchReplace({ planId: '00000000-0000-0000-0000-000000000000', ownerId: 'owner-a', plans: [{ path: '../../pwned' }] }),
+    /inexistente|utilizado/,
+  );
+
+  const wrongOwnerPlan = await planSearchReplace({ projectPath: tempDir, query: 'old', replacement: 'new', ownerId: 'owner-a' });
+  await assert.rejects(applySearchReplace({ planId: wrongOwnerPlan.planId, ownerId: 'owner-b' }), /outro contexto/);
+  assert.equal(await fs.readFile(path.join(tempDir, 'a.js'), 'utf8'), 'const value = "old";\n');
+
+  const plan = await planSearchReplace({ projectPath: tempDir, query: 'old', replacement: 'new', ownerId: 'owner-a' });
+  await applySearchReplace({ planId: plan.planId, ownerId: 'owner-a' });
+  await assert.rejects(applySearchReplace({ planId: plan.planId, ownerId: 'owner-a' }), /inexistente|utilizado/);
+});
+
+test('busca respeita cancelamento por AbortSignal', async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-search-abort-'));
+  t.after(async () => fs.rm(tempDir, { recursive: true, force: true }).catch(() => {}));
+  await fs.writeFile(path.join(tempDir, 'a.js'), 'needle\n', 'utf8');
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(
+    searchProjectText({ projectPath: tempDir, query: 'needle' }, { signal: controller.signal }),
+    { name: 'AbortError' },
+  );
 });

@@ -2777,7 +2777,7 @@ async function acaoDoGit(acao) {
 // --- Busca Global e Substituição Transacional -------------------------------
 function renderSearchResultsList() {
   if (state.searchBusy) {
-    return '<p class="empty-copy"><i class="ph-duotone ph-circle-notch spin-icon"></i> Buscando no projeto…</p>';
+    return '<p class="empty-copy"><i class="ph-duotone ph-circle-notch spin-icon"></i> Buscando no projeto… <button class="inline-action" id="btnCancelSearch">Cancelar</button></p>';
   }
   if (!state.searchResults.length) {
     if (state.searchQuery) return '<p class="empty-copy">Nenhum resultado encontrado.</p>';
@@ -2858,6 +2858,10 @@ async function runGlobalSearch() {
     state.searchDirty = false;
     state.searchSummary = `${state.searchTotalMatches} resultado(s) em ${state.searchFileCount} arquivo(s)${res.truncated ? ' (limite atingido)' : ''}`;
   } catch (err) {
+    if (err?.name === 'AbortError' || /aborted|cancelada/i.test(err?.message || '')) {
+      state.searchSummary = 'Busca cancelada.';
+      return;
+    }
     state.searchResults = [];
     state.searchSummary = `Erro: ${err.message}`;
     toast('Falha na busca', err.message, 'error');
@@ -2889,7 +2893,7 @@ async function planGlobalReplace() {
       filePattern: state.searchFilePattern,
     });
 
-    if (!plan.planos?.length) {
+    if (!plan.planId) {
       toast('Nada para substituir', 'Nenhuma ocorrência encontrada com os filtros atuais.');
       return;
     }
@@ -2904,7 +2908,7 @@ async function planGlobalReplace() {
 
     if (!confirmado) return;
 
-    const aplicados = await bridge.search.applyReplace({ plans: plan.planos });
+    const aplicados = await bridge.search.applyReplace({ planId: plan.planId });
     toast('Substituição concluída', `${aplicados.length} arquivo(s) atualizados com sucesso.`);
     for (const tab of state.openTabs.filter(abaEditavel)) {
       if (aplicados.some((a) => a.path === tab.path)) {
@@ -3272,6 +3276,14 @@ document.addEventListener('click', async (event) => {
 
   if (event.target.closest('#btnRunSearch') || event.target.closest('#mainBtnRunSearch')) {
     await runGlobalSearch();
+    return;
+  }
+
+  if (event.target.closest('#btnCancelSearch')) {
+    await bridge.search.cancel();
+    state.searchBusy = false;
+    state.searchSummary = 'Busca cancelada.';
+    renderSidebar();
     return;
   }
 

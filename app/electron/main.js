@@ -27,6 +27,7 @@ app.commandLine.appendSwitch('disable-http-cache');
 let mainWindow;
 let backend;
 const activeChatRequests = new Map();
+const activeSearchRequests = new Map();
 
 function loadEnvironment() {
   const envPath = path.join(__dirname, '..', '.env');
@@ -477,25 +478,44 @@ function registerIpc() {
     if (!response.ok) throw new Error(data.error || 'Falha ao resolver a aprovação.');
     return data;
   });
-  ipcMain.handle('search:query', async (_event, payload) => {
-    const response = await backendFetch('/api/search', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Falha na busca global.');
-    return data;
+  ipcMain.handle('search:query', async (event, payload) => {
+    const ownerId = String(event.sender.id);
+    activeSearchRequests.get(ownerId)?.abort();
+    const controller = new AbortController();
+    activeSearchRequests.set(ownerId, controller);
+    try {
+      const response = await backendFetch('/api/search', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+        signal: controller.signal,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Falha na busca global.');
+      return data;
+    } finally {
+      if (activeSearchRequests.get(ownerId) === controller) activeSearchRequests.delete(ownerId);
+    }
   });
-  ipcMain.handle('search:plan-replace', async (_event, payload) => {
+  ipcMain.handle('search:cancel', async (event) => {
+    const ownerId = String(event.sender.id);
+    const controller = activeSearchRequests.get(ownerId);
+    if (!controller) return false;
+    controller.abort();
+    activeSearchRequests.delete(ownerId);
+    return true;
+  });
+  ipcMain.handle('search:plan-replace', async (event, payload) => {
     const response = await backendFetch('/api/search/plan-replace', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...(payload || {}), ownerId: String(event.sender.id) }),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Falha ao planejar substituição.');
     return data;
   });
-  ipcMain.handle('search:apply-replace', async (_event, payload) => {
+  ipcMain.handle('search:apply-replace', async (event, payload) => {
     const response = await backendFetch('/api/search/apply-replace', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ planId: payload?.planId, ownerId: String(event.sender.id) }),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Falha ao aplicar substituição.');

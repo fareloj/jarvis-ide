@@ -6,10 +6,21 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { planPatch, applyPatch } = require('./file-write');
 
 const MAX_SEARCH_RESULTS = 1000;
 const MAX_SEARCH_FILE_BYTES = 1_500_000; // 1.5 MB por arquivo individual
+const PLAN_TTL_MS = 5 * 60_000;
+const pendingReplacePlans = new Map();
+
+function throwIfAborted(signal) {
+  if (!signal?.aborted) return;
+  const error = new Error('Busca cancelada.');
+  error.name = 'AbortError';
+  error.code = 'ABORT_ERR';
+  throw error;
+}
 
 const IGNORED_DIRECTORIES = new Set([
   '.git',
@@ -81,7 +92,8 @@ function buildSearchRegex(query, { isRegex = false, isCaseSensitive = false, isW
   return new RegExp(pattern, flags);
 }
 
-async function collectFiles(dirPath, rootPath, filesList = []) {
+async function collectFiles(dirPath, rootPath, filesList = [], signal = null) {
+  throwIfAborted(signal);
   let entries;
   try {
     entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -90,9 +102,10 @@ async function collectFiles(dirPath, rootPath, filesList = []) {
   }
 
   for (const entry of entries) {
+    throwIfAborted(signal);
     if (entry.isDirectory()) {
       if (!IGNORED_DIRECTORIES.has(entry.name) && !entry.name.startsWith('.')) {
-        await collectFiles(path.join(dirPath, entry.name), rootPath, filesList);
+        await collectFiles(path.join(dirPath, entry.name), rootPath, filesList, signal);
       }
     } else if (entry.isFile()) {
       if (isSearchableFile(entry.name)) {
@@ -113,7 +126,8 @@ async function searchProjectText({
   isWholeWord = false,
   filePattern = '',
   maxResults = MAX_SEARCH_RESULTS,
-} = {}) {
+} = {}, { signal = null } = {}) {
+  throwIfAborted(signal);
   const raiz = path.resolve(String(projectPath || ''));
   if (!raiz || raiz === '.') throw new Error('Nenhum projeto aberto para busca.');
   const termo = String(query || '');
@@ -128,7 +142,7 @@ async function searchProjectText({
     throw new Error(`Expressão regular inválida: ${err.message}`);
   }
 
-  const allFiles = await collectFiles(raiz, raiz);
+  const allFiles = await collectFiles(raiz, raiz, [], signal);
   const matchedFiles = allFiles.filter((f) => matchPattern(f.relPath, filePattern));
 
   const results = [];
@@ -137,6 +151,7 @@ async function searchProjectText({
   const filesWithMatches = new Set();
 
   for (const file of matchedFiles) {
+    throwIfAborted(signal);
     if (totalMatches >= maxResults) {
       truncated = true;
       break;
@@ -152,6 +167,7 @@ async function searchProjectText({
 
       const lines = content.split(/\r?\n/);
       for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        throwIfAborted(signal);
         const lineContent = lines[lineIndex];
         regex.lastIndex = 0;
         let match;
@@ -201,6 +217,7 @@ async function planSearchReplace({
   isWholeWord = false,
   filePattern = '',
   selectedFiles = null,
+  ownerId = 'local',
 } = {}) {
   const raiz = path.resolve(String(projectPath || ''));
   if (!raiz || raiz === '.') throw new Error('Nenhum projeto aberto para substituição.');
@@ -259,7 +276,7 @@ async function planSearchReplace({
 
   if (!filesToPatch.length) {
     return {
-      planos: [],
+      planId: null,
       diff: '',
       resumo: [],
       totalMatches: 0,
@@ -272,18 +289,37 @@ async function planSearchReplace({
     files: filesToPatch,
   });
 
+  const planId = crypto.randomUUID();
+  const expiresAt = Date.now() + PLAN_TTL_MS;
+  pendingReplacePlans.set(planId, {
+    ownerId: String(ownerId),
+    plans: patchPlan.planos,
+    expiresAt,
+  });
+
   return {
-    ...patchPlan,
+    planId,
+    diff: patchPlan.diff,
+    resumo: patchPlan.resumo,
     totalMatches,
     fileCount: filesToPatch.length,
+    expiresAt: new Date(expiresAt).toISOString(),
   };
 }
 
-async function applySearchReplace(planos) {
-  if (!Array.isArray(planos) || !planos.length) {
-    throw new Error('Nenhum plano de substituição para aplicar.');
+async function applySearchReplace({ planId, ownerId = 'local' } = {}) {
+  if (typeof planId !== 'string' || !/^[0-9a-f-]{36}$/i.test(planId)) {
+    throw new Error('Plano de substituição inválido.');
   }
-  return applyPatch(planos);
+  const pending = pendingReplacePlans.get(planId);
+  if (!pending) throw new Error('Plano de substituição inexistente ou já utilizado.');
+  if (pending.expiresAt < Date.now()) {
+    pendingReplacePlans.delete(planId);
+    throw new Error('Plano de substituição expirado.');
+  }
+  if (pending.ownerId !== String(ownerId)) throw new Error('Plano de substituição pertence a outro contexto.');
+  pendingReplacePlans.delete(planId);
+  return applyPatch(pending.plans);
 }
 
 module.exports = {
@@ -295,4 +331,5 @@ module.exports = {
   isSearchableFile,
   IGNORED_DIRECTORIES,
   IGNORED_EXTENSIONS,
+  throwIfAborted,
 };

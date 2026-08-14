@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   },
   search: {
     query: (payload) => ipcRenderer.invoke('search:query', payload),
+    cancel: () => ipcRenderer.invoke('search:cancel'),
     planReplace: (payload) => ipcRenderer.invoke('search:plan-replace', payload),
     applyReplace: (payload) => ipcRenderer.invoke('search:apply-replace', payload),
   },

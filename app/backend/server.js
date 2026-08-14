@@ -633,7 +633,12 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
 
       if (request.method === 'POST' && request.url === '/api/search') {
         const body = await readJson(request);
-        sendJson(response, 200, await searchEngine.searchProjectText(body));
+        const controller = new AbortController();
+        request.once('aborted', () => controller.abort());
+        response.once('close', () => {
+          if (!response.writableEnded) controller.abort();
+        });
+        sendJson(response, 200, await searchEngine.searchProjectText(body, { signal: controller.signal }));
         return;
       }
 
@@ -644,8 +649,8 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
       }
 
       if (request.method === 'POST' && request.url === '/api/search/apply-replace') {
-        const body = await readJson(request, 5_000_000);
-        sendJson(response, 200, await searchEngine.applySearchReplace(body.plans));
+        const body = await readJson(request);
+        sendJson(response, 200, await searchEngine.applySearchReplace(body));
         return;
       }
 
