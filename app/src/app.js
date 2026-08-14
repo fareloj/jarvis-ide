@@ -4,16 +4,14 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const bridge = window.jarvis;
 const messageBranches = window.JarvisMessageBranches;
 const defaultProject = { name: 'Nenhum projeto', path: '' };
-const defaultModel = localStorage.getItem('jarvis:model') || 'gpt-oss:120b-cloud';
-const modelCatalog = [
-  { id: 'gpt-oss:120b-cloud', label: 'GPT-OSS 120B Cloud', short: 'GPT-OSS 120B' },
-  { id: 'gpt-oss:20b-cloud', label: 'GPT-OSS 20B Cloud', short: 'GPT-OSS 20B' },
-  { id: 'qwen3-coder:480b-cloud', label: 'Qwen3 Coder 480B Cloud', short: 'Qwen3 Coder 480B' },
-  { id: 'nemotron-3-super', label: 'Nemotron 3 Super', short: 'Nemotron 3 Super' },
-  { id: 'nemotron-3-ultra:cloud', label: 'Nemotron 3 Ultra Cloud', short: 'Nemotron 3 Ultra' },
-  { id: 'nemotron-3-nano:30b-cloud', label: 'Nemotron 3 Nano 30B Cloud', short: 'Nemotron 3 Nano 30B' },
-  { id: 'minimax-m3:cloud', label: 'MiniMax M3 Cloud', short: 'MiniMax M3' },
-];
+const defaultModel = localStorage.getItem('jarvis:model') || 'kimi-k2.7-code:cloud';
+// A lista real vem do backend (Ollama ao vivo). Este catalogo so' sobrevive
+// como fallback de rotulo antes do primeiro carregamento e quando o Ollama
+// esta fora: sem ele o topo mostraria o id cru do modelo.
+const modelCatalog = [];
+
+// Preenchido por loadModelCatalog(); usado pelo seletor e pelo rotulo do topo.
+let cloudModels = [];
 const BASE_SYSTEM_PROMPT = [
   'Você é o JARVIS, assistente de desenvolvimento dentro de uma IDE. Seja direto e concreto: prefira a resposta útil à resposta longa.',
   '',
@@ -211,6 +209,8 @@ function escapeHtml(value) {
 }
 
 function shortModel(model) {
+  const carregado = cloudModels.find((entry) => entry.id === model);
+  if (carregado) return carregado.label;
   return modelCatalog.find((entry) => entry.id === model)?.short || model;
 }
 
@@ -534,7 +534,7 @@ function specialPage(type) {
       <div class="settings-grid">
         <section class="settings-group">
           <h2>Modelo</h2>
-          <div class="setting-row"><span><strong>Modelo principal</strong><small>Enviado em cada conversa</small></span><select id="modelSelect">${modelCatalog.map((model) => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.label)}</option>`).join('')}</select></div>
+          <div class="setting-row"><span><strong>Modelo principal</strong><small>Trocado pelo nome do modelo na barra superior</small></span><button class="button compact secondary" data-action="open-model-dialog">${escapeHtml(shortModel(state.model))}</button></div>
           <div class="setting-row"><span><strong>Ollama</strong><small>Configurado pelo arquivo .env</small></span><button class="button compact secondary" id="testConnection">Testar</button></div>
         </section>
         <section class="settings-group">
@@ -1436,9 +1436,6 @@ function switchNav(nav) {
     $$('[data-content-view]').forEach((section) => section.classList.add('hidden'));
     elements.workbench.insertBefore(specialPage(nav), elements.bottomPanel);
     if (nav === 'settings') {
-      const select = $('#modelSelect');
-      select.value = state.model;
-      select.addEventListener('change', () => setModel(select.value));
       $('#testConnection').addEventListener('click', checkHealth);
       loadCapabilities();
       loadSkillReviews();
@@ -2878,6 +2875,7 @@ document.addEventListener('click', async (event) => {
   if (action === 'toggle-sidebar') toggleSidebar();
   if (action === 'toggle-inspector') toggleInspector();
   if (action === 'toggle-bottom') elements.bottomPanel.classList.toggle('collapsed');
+  if (action === 'open-model-dialog') openModelDialog();
   if (action === 'toggle-conversation-memory') {
     state.conversationMemoryEnabled = !state.conversationMemoryEnabled;
     target.classList.toggle('on', state.conversationMemoryEnabled);
@@ -2969,11 +2967,127 @@ $$('.bottom-tab').forEach((tab) => {
   });
 });
 
-$('#modelPicker').addEventListener('click', () => {
-  elements.welcome.classList.add('hidden');
-  elements.workspace.classList.remove('hidden');
-  switchNav('settings');
+// ---- Seletor de modelos (Ollama Cloud) ----
+// Sai das Configuracoes e vira um dialogo central: trocar de modelo e' uma
+// decisao do chat, feita com frequencia, e nao uma preferencia enterrada.
+const modelFilters = { multimodal: false, tools: false, thinking: false };
+let modelSortAsc = true; // do mais barato para o mais caro
+
+function modelUsageBars(nivel) {
+  const escala = { low: 1, medium: 2, high: 3, 'extra high': 4 };
+  const n = escala[nivel] || 2;
+  const barras = [1, 2, 3, 4].map((i) => `<span class="${i <= n ? 'on' : ''}"></span>`).join('');
+  return `<span class="model-usage-bars nivel-${n}">${barras}</span>`;
+}
+
+function renderModelList() {
+  const lista = $('#modelList');
+  if (!lista) return;
+
+  if (!cloudModels.length) {
+    lista.innerHTML = '<p class="model-empty">Nenhum modelo cloud disponível. Verifique se o Ollama está em execução e se você está autenticado.</p>';
+    return;
+  }
+
+  const ativos = Object.entries(modelFilters).filter(([, ligado]) => ligado).map(([chave]) => chave);
+  // Filtros se acumulam: marcar Tools e Think mostra quem tem os dois.
+  const visiveis = cloudModels
+    .filter((modelo) => ativos.every((chave) => modelo[chave]))
+    .sort((a, b) => (modelSortAsc ? a.ordemDeCusto - b.ordemDeCusto : b.ordemDeCusto - a.ordemDeCusto)
+      || a.label.localeCompare(b.label));
+
+  if (!visiveis.length) {
+    lista.innerHTML = '<p class="model-empty">Nenhum modelo combina com esses filtros.</p>';
+    return;
+  }
+
+  lista.innerHTML = visiveis.map((modelo) => {
+    const marcas = [
+      modelo.multimodal ? '<span class="model-tag vision"><i class="ph-duotone ph-image"></i>multimodal</span>' : '',
+      modelo.tools ? '<span class="model-tag tools"><i class="ph-duotone ph-wrench"></i>tools</span>' : '',
+      modelo.thinking ? '<span class="model-tag think"><i class="ph-duotone ph-brain"></i>think</span>' : '',
+      modelo.parametros ? `<span class="model-tag">${escapeHtml(modelo.parametros)}</span>` : '',
+    ].join('');
+    return `
+      <button class="model-item ${modelo.id === state.model ? 'active' : ''}" data-model-id="${escapeHtml(modelo.id)}">
+        <span>
+          <span class="model-item-name">
+            <strong>${escapeHtml(modelo.label)}</strong>
+            <code>${escapeHtml(modelo.id)}</code>
+          </span>
+          <span class="model-item-meta">${marcas}</span>
+        </span>
+        <span class="model-usage">
+          <span class="model-usage-label">${escapeHtml(modelo.nivelDeUso)}</span>
+          ${modelUsageBars(modelo.nivelDeUso)}
+        </span>
+      </button>`;
+  }).join('');
+}
+
+async function loadModelCatalog({ silencioso = true } = {}) {
+  if (!bridge?.models?.list) return;
+  try {
+    const payload = await bridge.models.list();
+    cloudModels = Array.isArray(payload.models) ? payload.models : [];
+    if (payload.error && !silencioso) toast('Modelos indisponíveis', payload.error, 'error');
+    setModel(state.model); // atualiza o rotulo assim que o catalogo chega
+    renderModelList();
+  } catch (error) {
+    if (!silencioso) toast('Falha ao listar modelos', error.message, 'error');
+  }
+}
+
+function openModelDialog() {
+  $('#modelBackdrop')?.classList.remove('hidden');
+  $('#modelDialog')?.classList.remove('hidden');
+  const sub = $('#modelDialogSub');
+  if (sub) sub.textContent = `Ollama Cloud · ${cloudModels.length} modelos`;
+  renderModelList();
+  loadModelCatalog();
+}
+
+function closeModelDialog() {
+  $('#modelBackdrop')?.classList.add('hidden');
+  $('#modelDialog')?.classList.add('hidden');
+}
+
+$('#modelPicker')?.addEventListener('click', openModelDialog);
+$('#modelDialogClose')?.addEventListener('click', closeModelDialog);
+$('#modelBackdrop')?.addEventListener('click', closeModelDialog);
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !$('#modelDialog')?.classList.contains('hidden')) closeModelDialog();
 });
+
+document.addEventListener('click', (event) => {
+  const filtro = event.target.closest('[data-model-filter]');
+  if (filtro) {
+    const chave = filtro.dataset.modelFilter;
+    modelFilters[chave] = !modelFilters[chave];
+    filtro.classList.toggle('active', modelFilters[chave]);
+    renderModelList();
+    return;
+  }
+
+  const ordenar = event.target.closest('#modelSortButton');
+  if (ordenar) {
+    modelSortAsc = !modelSortAsc;
+    ordenar.dataset.modelSort = modelSortAsc ? 'asc' : 'desc';
+    $('#modelSortLabel').textContent = modelSortAsc ? 'Mais barato' : 'Mais caro';
+    $('i', ordenar).className = `ph-duotone ${modelSortAsc ? 'ph-arrow-up' : 'ph-arrow-down'}`;
+    renderModelList();
+    return;
+  }
+
+  const escolhido = event.target.closest('[data-model-id]');
+  if (escolhido) {
+    setModel(escolhido.dataset.modelId);
+    closeModelDialog();
+  }
+});
+
+loadModelCatalog();
 
 document.addEventListener('keydown', (event) => {
   if (!event.ctrlKey) return;

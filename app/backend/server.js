@@ -9,6 +9,7 @@ const tools = require('./tool-registry');
 const quota = require('./quota-monitor');
 const conversationMemory = require('./conversation-memory');
 const gitWorkspace = require('./git-workspace');
+const modelCatalog = require('./model-catalog');
 const { createSkillReview } = require('./skill-review');
 
 const DEFAULT_MODEL = process.env.JARVIS_OLLAMA_MODEL || 'gpt-oss:120b-cloud';
@@ -416,6 +417,11 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
       if (request.method === 'POST' && request.url === '/api/memory/conversation/forget') {
         const body = await readJson(request);
         sendJson(response, 200, await conversationMemory.forgetSession(body.sessionId));
+        return;
+      }
+
+      if (request.method === 'GET' && request.url === '/api/models') {
+        sendJson(response, 200, await modelCatalog.listCloudModels());
         return;
       }
 

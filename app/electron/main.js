@@ -354,6 +354,13 @@ function registerIpc() {
     });
   });
 
+  ipcMain.handle('models:list', async () => {
+    const response = await backendFetch('/api/models');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao listar modelos.');
+    return data;
+  });
+
   ipcMain.handle('backend:health', async () => {
     const response = await backendFetch('/health');
     return response.json();

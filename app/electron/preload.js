@@ -66,6 +66,9 @@ contextBridge.exposeInMainWorld('jarvis', {
     logout: () => ipcRenderer.invoke('quota:logout'),
     openSettings: () => ipcRenderer.invoke('quota:open-settings'),
   },
+  models: {
+    list: () => ipcRenderer.invoke('models:list'),
+  },
   backend: {
     health: () => ipcRenderer.invoke('backend:health'),
     chat: (payload) => ipcRenderer.invoke('backend:chat', payload),

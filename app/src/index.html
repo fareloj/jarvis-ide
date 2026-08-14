@@ -325,6 +325,32 @@
         </div>
       </section>
 
+      <div class="model-backdrop hidden" id="modelBackdrop"></div>
+      <section class="model-dialog hidden" id="modelDialog" role="dialog" aria-labelledby="modelDialogTitle" aria-modal="true">
+        <header class="model-dialog-head">
+          <div>
+            <strong id="modelDialogTitle">Escolher modelo</strong>
+            <span class="model-dialog-sub" id="modelDialogSub">Ollama Cloud</span>
+          </div>
+          <button class="icon-button subtle" id="modelDialogClose" title="Fechar" aria-label="Fechar"><i class="ph-duotone ph-x"></i></button>
+        </header>
+
+        <div class="model-filters" role="group" aria-label="Filtrar modelos">
+          <button class="model-chip" data-model-filter="multimodal"><i class="ph-duotone ph-image"></i>Multimodal</button>
+          <button class="model-chip" data-model-filter="tools"><i class="ph-duotone ph-wrench"></i>Tools</button>
+          <button class="model-chip" data-model-filter="thinking"><i class="ph-duotone ph-brain"></i>Think</button>
+          <span class="model-filter-spacer"></span>
+          <button class="model-chip" id="modelSortButton" data-model-sort="asc" title="Ordenar por custo">
+            <i class="ph-duotone ph-arrow-up"></i><span id="modelSortLabel">Mais barato</span>
+          </button>
+        </div>
+
+        <div class="model-list" id="modelList"></div>
+        <p class="model-dialog-foot">
+          Nível de uso conforme a escala do Ollama (low → extra high). O Ollama não publica preço por token.
+        </p>
+      </section>
+
       <div class="popover-backdrop hidden" id="confirmBackdrop"></div>
       <section class="confirm-dialog hidden" id="confirmDialog" role="alertdialog" aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
         <div class="confirm-head">
