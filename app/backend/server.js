@@ -13,6 +13,14 @@ const modelCatalog = require('./model-catalog');
 const { createSkillReview } = require('./skill-review');
 const searchEngine = require('./search-engine');
 const { defaultProblemsRunner } = require('./problems-runner');
+const {
+  DEFAULT_BUDGET,
+  compactConversation,
+  defaultCheckpointStore,
+  defaultJobQueue,
+  safeRetry,
+  isIdempotentTool,
+} = require('./agent-runtime');
 
 const DEFAULT_MODEL = process.env.JARVIS_OLLAMA_MODEL || 'gpt-oss:120b-cloud';
 const SKILL_REVIEW_MODEL = process.env.JARVIS_SKILL_REVIEW_MODEL || '';
@@ -129,7 +137,17 @@ const skillReview = createSkillReview({
 
 async function streamChat(messages, model, runId, clientResponse, abortController, options = {}) {
   skillReview.cancelReview(options.sessionId);
-  const conversation = normalizeMessages(messages);
+  const maxTurns = Math.min(Math.max(Number(options.maxTurns) || DEFAULT_BUDGET.maxTurns, 1), 50);
+  const maxContextChars = Number(options.maxContextChars) || DEFAULT_BUDGET.maxContextChars;
+
+  defaultJobQueue.createJob({
+    runId,
+    type: 'agent_chat',
+    projectPath: options.projectPath,
+    metadata: { model, sessionId: options.sessionId, sessionTitle: options.sessionTitle },
+  });
+
+  let conversation = normalizeMessages(messages);
   const skillStates = await skillReview.listSkillStates();
   const activeSkills = (await loadActiveSkills(options.activeSkills))
     .filter((skill) => skillStates[skill.id]?.state !== 'archived');
@@ -171,25 +189,37 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
 
   let doneSent = false;
   let finalAssistantContent = '';
-  const runMetrics = { toolCalls: 0, toolResults: 0, toolFailures: 0 };
-  const emit = (type, payload) => clientResponse.write(`${JSON.stringify(createRunEvent(runId, type, payload))}\n`);
+  const runMetrics = { toolCalls: 0, toolResults: 0, toolFailures: 0, turnsUsed: 0 };
+  const emit = (type, payload) => {
+    const event = createRunEvent(runId, type, payload);
+    defaultJobQueue.appendEvent(runId, event);
+    clientResponse.write(`${JSON.stringify(event)}\n`);
+  };
 
-  for (let turn = 0; turn < 5 && !doneSent; turn += 1) {
-    const upstream = await fetch(`${OLLAMA_HOST}/api/chat`, {
-      method: 'POST',
-      headers: ollamaHeaders(),
-      body: JSON.stringify({
-        model: model || DEFAULT_MODEL,
-        messages: conversation,
-        stream: true,
-        tools: options.toolsEnabled === false ? undefined : tools.publicDefinitions(),
-      }),
-      signal: AbortSignal.any([abortController.signal, AbortSignal.timeout(180_000)]),
-    });
-    if (!upstream.ok) {
-      const payload = await upstream.json().catch(() => ({}));
-      throw new Error(payload.error || `Ollama respondeu com HTTP ${upstream.status}.`);
-    }
+  for (let turn = 0; turn < maxTurns && !doneSent; turn += 1) {
+    runMetrics.turnsUsed = turn + 1;
+    conversation = compactConversation(conversation, { maxChars: maxContextChars });
+
+    const upstream = await safeRetry(async () => {
+      const res = await fetch(`${OLLAMA_HOST}/api/chat`, {
+        method: 'POST',
+        headers: ollamaHeaders(),
+        body: JSON.stringify({
+          model: model || DEFAULT_MODEL,
+          messages: conversation,
+          stream: true,
+          tools: options.toolsEnabled === false ? undefined : tools.publicDefinitions(),
+        }),
+        signal: AbortSignal.any([abortController.signal, AbortSignal.timeout(180_000)]),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        const err = new Error(payload.error || `Ollama respondeu com HTTP ${res.status}.`);
+        err.status = res.status;
+        throw err;
+      }
+      return res;
+    }, { maxRetries: 2, initialDelayMs: 250, signal: abortController.signal });
 
     const decoder = new TextDecoder();
     let pending = '';
@@ -219,32 +249,53 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
     }
 
     runMetrics.toolCalls += toolCalls.length;
-
     conversation.push({ role: 'assistant', content: assistantContent, tool_calls: toolCalls });
+
     let approvalRequired = false;
     for (const call of toolCalls) {
       const name = call.function?.name;
       let args = call.function?.arguments || {};
       if (typeof args === 'string') args = JSON.parse(args || '{}');
       emit(EVENT_TYPES.TOOL_REQUESTED, { name, args });
+
+      // Idempotency check: se a tool pura já foi executada para este runId com estes mesmos argumentos, reuse resultado
+      const cachedExecution = await defaultCheckpointStore.hasExecutedTool(runId, name, args);
+      if (cachedExecution && isIdempotentTool(name)) {
+        runMetrics.toolResults += 1;
+        const result = JSON.stringify(cachedExecution.result).slice(0, 120_000);
+        emit(EVENT_TYPES.TOOL_RESULT, { name, result: cachedExecution.result, fromCache: true });
+        conversation.push({ role: 'tool', tool_name: name, content: result });
+        continue;
+      }
+
       const outcome = await tools.requestTool(name, args, {
         projectPath: options.projectPath,
         corpus: options.corpus,
-        // Cancelar a conversa precisa alcancar o processo que ela abriu:
-        // sem este sinal, terminal_run e delegate_coding_task seguiam
-        // rodando (com toda a arvore de filhos) depois do cancelamento.
         signal: abortController.signal,
       });
+
       if (outcome.status === 'approval_required') {
         approvalRequired = true;
         emit(EVENT_TYPES.APPROVAL_REQUIRED, outcome.approval);
         continue;
       }
+
       runMetrics.toolResults += 1;
+      await defaultCheckpointStore.recordExecutedTool(runId, name, args, outcome.result).catch(() => {});
+
       const result = JSON.stringify(outcome.result).slice(0, 120_000);
       emit(EVENT_TYPES.TOOL_RESULT, { name, result: outcome.result });
       conversation.push({ role: 'tool', tool_name: name, content: result });
     }
+
+    await defaultCheckpointStore.saveCheckpoint(runId, {
+      sessionId: options.sessionId,
+      projectPath: options.projectPath,
+      turns: turn + 1,
+      metrics: runMetrics,
+      history: conversation,
+    }).catch(() => {});
+
     if (approvalRequired) {
       doneSent = true;
       emit(EVENT_TYPES.MESSAGE_DONE, {
@@ -254,8 +305,12 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
       });
     }
   }
+
   if (!doneSent) {
-    emit(EVENT_TYPES.RUN_FAILED, { error: 'O agente excedeu o limite de chamadas de tools.' });
+    emit(EVENT_TYPES.RUN_FAILED, { error: `O agente excedeu o limite configurado de ${maxTurns} rodadas.` });
+    defaultJobQueue.completeJob(runId, 'failed');
+  } else {
+    defaultJobQueue.completeJob(runId, 'completed');
   }
 
   // Grava o turno na memória semântica depois de responder, para que outras
@@ -603,6 +658,23 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
       if (request.method === 'POST' && request.url === '/api/problems/cancel') {
         const body = await readJson(request);
         sendJson(response, 200, { cancelled: await defaultProblemsRunner.cancelRun(body.runId) });
+        return;
+      }
+
+      if (request.method === 'GET' && request.url === '/api/agent/jobs') {
+        sendJson(response, 200, { jobs: defaultJobQueue.listJobs() });
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/agent/jobs/cancel') {
+        const body = await readJson(request);
+        sendJson(response, 200, { cancelled: await defaultJobQueue.cancelJob(body.runId) });
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/agent/checkpoints') {
+        const body = await readJson(request);
+        sendJson(response, 200, { checkpoint: await defaultCheckpointStore.getCheckpoint(body.runId) });
         return;
       }
 

@@ -517,6 +517,28 @@ function registerIpc() {
     if (!response.ok) throw new Error(data.error || 'Falha ao cancelar diagnóstico.');
     return data;
   });
+  ipcMain.handle('agent:jobs', async () => {
+    const response = await backendFetch('/api/agent/jobs');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao listar jobs.');
+    return data;
+  });
+  ipcMain.handle('agent:cancel-job', async (_event, payload) => {
+    const response = await backendFetch('/api/agent/jobs/cancel', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao cancelar job.');
+    return data;
+  });
+  ipcMain.handle('agent:checkpoint', async (_event, payload) => {
+    const response = await backendFetch('/api/agent/checkpoints', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao buscar checkpoint.');
+    return data;
+  });
   ipcMain.handle('quota:get', async () => {
     const response = await backendFetch('/api/ollama/quota');
     return response.json();

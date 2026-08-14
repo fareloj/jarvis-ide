@@ -95,6 +95,11 @@ contextBridge.exposeInMainWorld('jarvis', {
       return () => ipcRenderer.removeListener('pty:exit', listener);
     },
   },
+  agent: {
+    listJobs: () => ipcRenderer.invoke('agent:jobs'),
+    cancelJob: (payload) => ipcRenderer.invoke('agent:cancel-job', payload),
+    getCheckpoint: (payload) => ipcRenderer.invoke('agent:checkpoint', payload),
+  },
   backend: {
     health: () => ipcRenderer.invoke('backend:health'),
     chat: (payload) => ipcRenderer.invoke('backend:chat', payload),

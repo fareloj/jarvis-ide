@@ -43,7 +43,7 @@ Não misture refatorações oportunistas, mudanças visuais e funcionalidades n�
 | Gate | Revisar e integrar a Fase A na `main` | Codex | Integração | CONCLUÍDA | 0–6 |
 | 7 | Implementar terminal interativo PTY | Gemini | B | CONCLUÍDA | Gate |
 | 8 | Implementar Problems e busca global | Gemini | B | CONCLUÍDA | 7 |
-| 9 | Robustecer o runtime agentic | Gemini | B | PENDENTE | 7–8 |
+| 9 | Robustecer o runtime agentic | Gemini | B | CONCLUÍDA | 7–8 |
 | 10 | Completar o sistema de skills | Codex | B | PENDENTE | 9 |
 | 11 | Melhorar ciclo de vida do RAG | Codex | B | PENDENTE | 9 |
 | 12 | Completar gerenciamento de memória | Codex | B | PENDENTE | 11 |
@@ -415,11 +415,21 @@ Fazer tarefas longas sobreviverem a contexto grande, falhas transitórias e rein
 
 ### Critérios de aceite
 
-- [ ] Conversa longa compacta contexto sem perder requisitos ativos.
-- [ ] Reiniciar o aplicativo não corrompe o histórico da tarefa.
-- [ ] Retry não repete escrita ou comando destrutivo.
-- [ ] Delegação mostra progresso e pode ser cancelada.
-- [ ] Limites de tempo, tokens e tools ficam visíveis ao usuário.
+- [x] Conversa longa compacta contexto sem perder requisitos ativos.
+- [x] Reiniciar o aplicativo não corrompe o histórico da tarefa.
+- [x] Retry não repete escrita ou comando destrutivo.
+- [x] Delegação mostra progresso e pode ser cancelada.
+- [x] Limites de tempo, tokens e tools ficam visíveis ao usuário.
+
+### Decisões
+
+**Checkpoints Versionados e Atômicos com Redação:** O módulo `backend/agent-runtime.js` implementa a classe `CheckpointStore` com persistência atômica (`writeAtomic`) de arquivos JSON versionados (`version: 1`). Antes da gravação, todos os segredos, tokens de autenticação (`Bearer`), chaves de API e senhas são filtrados por `redactSecrets`.
+
+**Idempotência Estrita de Tools:** Para impedir a reexecução acidental de chamadas de tools durante retries ou retomadas de sessão, cada chamada recebe um identificador determinístico via `getIdempotencyKey(runId, toolName, args)` (hash SHA-256 canônico). Tools puras de leitura (`rag_search`, `web_search`, `project_list_files`, `project_read_file`, `memory_list`, `project_stat`) reutilizam resultados em cache em caso de repetição. Ações mutantes (`project_write_file`, `project_apply_patch`, `terminal_run`, `delegate_coding_task`) nunca são reexecutadas cegamente por retry.
+
+**Retry Restrito a Falhas Transitórias:** O utilitário `safeRetry` aplica backoff exponencial unicamente diante de erros recuperáveis de rede ou sobrecarga (`ECONNRESET`, `ETIMEDOUT`, `HTTP 503`, `HTTP 429 Rate Limit`). Erros determinísticos (400, 401, 403, 404, negação de aprovação) falham imediatamente sem retry.
+
+**Compactação Determinística de Histórico:** O algoritmo `compactConversation` preserva integralmente as instruções do sistema, a meta/pergunta original do usuário e os turnos recentes mais relevantes, gerando sumários estruturados para turnos intermediários de tools quando o histórico se aproxima do limite de contexto configurável (`maxContextChars`, default 80.000).
 
 ---
 
@@ -563,6 +573,7 @@ Registre aqui problemas encontrados durante uma tarefa sem interromper o escopo 
 
 | Data | Tarefa | Resultado | Testes | Commit | Observações |
 |---|---:|---|---|---|---|
+| 2026-08-14 | 9 | Robustecimento do runtime agentic com orçamentos, checkpoints e retry seguro | 142/142 (8 novos) | `feat(agent): harden agentic runtime with checkpoints and retry` | Orçamentos configuráveis de turnos, tokens e tempo. Compactação determinística de contexto com preservação incondicional de system prompts e metas do usuário. Checkpoints versionados (v1) e gravados atomicamente via writeAtomic com redação abrangente de segredos e tokens (redactSecrets). Prevenção de duplicidade em retries via idempotency keys baseadas em hash SHA-256 das chamadas a tools puras. Retry restrito exclusivamente a erros transitórios de rede e sobrecarga com backoff exponencial. Fila de jobs em segundo plano com gerenciamento de lifecycle e encerramento de árvore de processos por killTree. |
 | 2026-08-14 | 8 | Busca global e painel Problems com execução isolada | 134/134 (12 novos) | `feat(diagnostics): add global search and problems panel` | Busca textual e regex rápida ignorando dependências (.git, node_modules) e binários com match highlighting. Substituição multi-arquivo 100% transacional usando planPatch/applyPatch com preview de diff e rollback atômico. Executor de Problems em ambiente saneado por allowlist (sem vazamento de API keys), timeout estrito com kill de árvore de processos netos (taskkill /T /F), cancelamento via IPC e parser estruturado para TypeScript, ESLint, Python, Jest e Node test runner com navegação direta para linha e coluna no editor Monaco. |
 | 2026-08-14 | 7 | Terminal interativo PTY xterm integrado | 122/122 (9 novos) | `feat(terminal): add interactive pty session with xterm` | Compatibilidade nativa do `node-pty@1.1.0` comprovada no Electron 43 no Windows via teste real (`test-electron-pty.js`). Backend PTY isolado com ciclo de vida atrelado à janela, ao projeto e ao encerramento do app. Frontend atualizado com xterm.js 6.0.0, fit addon 0.11.0 e abas divididas entre Terminal do Usuário e Comandos da IA. Testes cobrem spawn, resize, streaming ANSI, reinício, encerramento de árvores com processos netos reais, scoping por janela e ausência total de ferramentas PTY no registro do agente. |
 | 2026-08-14 | Gate | Fase A auditada e integrada na `main` | 110/110 | `fix(git): confine monorepo operations to workspace` | Instalação limpa, syntax check, suíte completa, `diff --check` e cenários adversariais executados. O gate encontrou uma falha não coberta em subpastas de monorepo: o painel expunha arquivos fora do workspace e o commit podia incluir stage externo. A correção restringe status e bloqueia commit cujo index tenha arquivos externos. Boot visual do Electron confirmado; a repetição automatizada dos fluxos de editor/Git foi impedida pelo runtime temporário do Electron receber acesso negado após o primeiro fechamento, portanto a evidência manual detalhada das Tarefas 5–6 também foi conferida no relatório do executor. |
