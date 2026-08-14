@@ -21,6 +21,7 @@
     />
     <title>JARVIS</title>
     <link rel="stylesheet" href="../node_modules/@phosphor-icons/web/src/duotone/style.css" />
+    <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -187,11 +188,25 @@
             <div class="bottom-resizer"></div>
             <div class="bottom-tabs">
               <button class="bottom-tab active" data-bottom="terminal">Terminal</button>
+              <button class="bottom-tab" data-bottom="agent-commands">Comandos da IA</button>
               <button class="bottom-tab" data-bottom="logs">Logs</button>
               <span class="tabs-spacer"></span>
               <button class="panel-icon" data-action="toggle-bottom"><i class="ph-duotone ph-caret-down"></i></button>
             </div>
-            <div class="terminal-output" id="terminalOutput" data-bottom-view="terminal">
+            <div class="pty-view" id="ptyView" data-bottom-view="terminal">
+              <div class="pty-header">
+                <div class="pty-status">
+                  <span class="pty-dot running" id="ptyStatusDot"></span>
+                  <span class="pty-status-text" id="ptyStatusText">Terminal interativo</span>
+                </div>
+                <div class="pty-actions">
+                  <button class="panel-icon" id="ptyRestartBtn" title="Reiniciar terminal (Ctrl+Shift+R)"><i class="ph-duotone ph-arrow-clockwise"></i></button>
+                  <button class="panel-icon" id="ptyClearBtn" title="Limpar tela"><i class="ph-duotone ph-trash"></i></button>
+                </div>
+              </div>
+              <div class="pty-container" id="ptyContainer"></div>
+            </div>
+            <div class="terminal-output hidden" id="terminalOutput" data-bottom-view="agent-commands">
               <p><span class="prompt-project">jarvis</span> <span class="muted">on</span> <span class="prompt-branch">main</span> <span class="prompt-symbol">❯</span> <span class="muted">terminal mediado pelo agente</span></p>
               <p class="terminal-note">Comandos solicitados pela IA só executam depois da sua aprovação.</p>
             </div>
@@ -369,6 +384,8 @@
 
     <script src="../node_modules/marked/lib/marked.umd.js"></script>
     <script src="../node_modules/dompurify/dist/purify.min.js"></script>
+    <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
+    <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
     <script src="./session-store.js"></script>
     <script src="./message-branches.js"></script>
     <script src="./app.js"></script>

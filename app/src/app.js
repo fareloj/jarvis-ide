@@ -2336,6 +2336,9 @@ async function openProject() {
   persist();
   enterWorkspace();
   renderSidebar();
+  if (project.path) {
+    startPtySession(project.path);
+  }
   toast('Projeto aberto', `${project.name} foi selecionado e está disponível para tools e indexação.`);
 }
 
@@ -2960,10 +2963,156 @@ elements.chatInput.addEventListener('keydown', (event) => {
 elements.connection.addEventListener('click', checkHealth);
 elements.connection.title = 'Clique para verificar a conexão novamente';
 
+// ---- Terminal Interativo PTY ----
+let ptySession = null;
+let xtermInstance = null;
+let xtermFitAddon = null;
+let ptyUnlisteners = [];
+
+function initPtyTerminal() {
+  const container = document.getElementById('ptyContainer');
+  if (!container || !window.Terminal) return;
+  if (xtermInstance) {
+    xtermFitAddon?.fit();
+    return;
+  }
+
+  const TerminalCtor = window.Terminal.Terminal || window.Terminal;
+  const FitCtor = window.FitAddon?.FitAddon || window.FitAddon;
+
+  xtermInstance = new TerminalCtor({
+    cursorBlink: true,
+    cursorStyle: 'bar',
+    fontSize: 12,
+    lineHeight: 1.2,
+    fontFamily: 'var(--font-mono), Consolas, "Courier New", monospace',
+    scrollback: 5000,
+    theme: {
+      background: '#201e1d',
+      foreground: '#dad6d6',
+      cursor: '#62c5ee',
+      selectionBackground: 'rgba(98, 197, 238, 0.3)',
+      black: '#201e1d',
+      red: '#e06c75',
+      green: '#98c379',
+      yellow: '#e5c07b',
+      blue: '#61afef',
+      magenta: '#c678dd',
+      cyan: '#56b6c2',
+      white: '#abb2bf',
+      brightBlack: '#5c6370',
+      brightRed: '#e06c75',
+      brightGreen: '#98c379',
+      brightYellow: '#e5c07b',
+      brightBlue: '#61afef',
+      brightMagenta: '#c678dd',
+      brightCyan: '#56b6c2',
+      brightWhite: '#ffffff',
+    },
+  });
+
+  if (FitCtor) {
+    xtermFitAddon = new FitCtor();
+    xtermInstance.loadAddon(xtermFitAddon);
+  }
+
+  xtermInstance.open(container);
+  if (xtermFitAddon) {
+    setTimeout(() => xtermFitAddon.fit(), 50);
+  }
+
+  xtermInstance.onData((data) => {
+    if (ptySession?.sessionId && bridge?.pty?.write) {
+      bridge.pty.write({ sessionId: ptySession.sessionId, data });
+    }
+  });
+
+  const resizeObserver = new ResizeObserver(() => {
+    if (xtermFitAddon && xtermInstance) {
+      xtermFitAddon.fit();
+      if (ptySession?.sessionId && bridge?.pty?.resize) {
+        bridge.pty.resize({
+          sessionId: ptySession.sessionId,
+          cols: xtermInstance.cols,
+          rows: xtermInstance.rows,
+        });
+      }
+    }
+  });
+  resizeObserver.observe(container);
+
+  const restartBtn = document.getElementById('ptyRestartBtn');
+  restartBtn?.addEventListener('click', () => {
+    startPtySession(state.project?.path);
+  });
+
+  const clearBtn = document.getElementById('ptyClearBtn');
+  clearBtn?.addEventListener('click', () => {
+    xtermInstance?.clear();
+  });
+}
+
+async function startPtySession(cwd) {
+  if (!bridge?.pty) return;
+  initPtyTerminal();
+
+  if (ptySession?.sessionId) {
+    try { await bridge.pty.kill({ sessionId: ptySession.sessionId }); } catch {}
+    ptySession = null;
+  }
+  ptyUnlisteners.forEach((u) => u?.());
+  ptyUnlisteners = [];
+
+  const dot = document.getElementById('ptyStatusDot');
+  const statusText = document.getElementById('ptyStatusText');
+  if (dot) dot.className = 'pty-dot running';
+  if (statusText) statusText.textContent = 'Conectando terminal...';
+
+  try {
+    const session = await bridge.pty.create({
+      cwd: cwd || state.project?.path || undefined,
+      cols: xtermInstance?.cols || 80,
+      rows: xtermInstance?.rows || 24,
+    });
+    ptySession = session;
+    if (statusText) {
+      const shellName = session.shell?.split(/[\\/]/).pop() || 'powershell';
+      statusText.textContent = `Terminal interativo (${shellName})`;
+    }
+    if (dot) dot.className = 'pty-dot running';
+
+    const offData = bridge.pty.onData(({ sessionId, data }) => {
+      if (sessionId === ptySession?.sessionId && xtermInstance) {
+        xtermInstance.write(data);
+      }
+    });
+
+    const offExit = bridge.pty.onExit(({ sessionId, exitCode }) => {
+      if (sessionId === ptySession?.sessionId) {
+        if (dot) dot.className = 'pty-dot exited';
+        if (statusText) statusText.textContent = `Terminal encerrado (código ${exitCode ?? 0})`;
+        xtermInstance?.write(`\r\n\x1b[90m[Processo finalizado com código ${exitCode ?? 0}]\x1b[0m\r\n`);
+      }
+    });
+
+    ptyUnlisteners.push(offData, offExit);
+  } catch (error) {
+    console.error('Falha ao criar sessão PTY:', error);
+    if (dot) dot.className = 'pty-dot exited';
+    if (statusText) statusText.textContent = 'Falha ao iniciar terminal';
+  }
+}
+
 $$('.bottom-tab').forEach((tab) => {
   tab.addEventListener('click', () => {
     $$('.bottom-tab').forEach((item) => item.classList.toggle('active', item === tab));
     $$('[data-bottom-view]').forEach((view) => view.classList.toggle('hidden', view.dataset.bottomView !== tab.dataset.bottom));
+    if (tab.dataset.bottom === 'terminal') {
+      setTimeout(() => {
+        xtermFitAddon?.fit();
+        xtermInstance?.focus();
+      }, 50);
+    }
   });
 });
 
@@ -3367,5 +3516,6 @@ renderWelcomeProjects();
 initBottomResize();
 checkHealth();
 promptQuotaLoginIfNeeded();
+startPtySession(state.project?.path);
 setInterval(loadQuota, 30 * 1000);
 

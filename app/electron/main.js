@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog, ipcMain, shell, session, safeStorage } = req
 const path = require('node:path');
 const fs = require('node:fs');
 const { EVENT_TYPES, createRunEvent } = require('../backend/protocol');
+const { defaultPtyManager } = require('../backend/pty-manager');
 
 const OLLAMA_ORIGIN = 'https://ollama.com';
 
@@ -210,6 +211,11 @@ function createWindow() {
 
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
     console.error('Falha ao carregar frontend:', errorCode, errorDescription);
+  });
+
+  const winId = mainWindow.id;
+  mainWindow.on('closed', () => {
+    defaultPtyManager.disposeWindowSessions(winId);
   });
 
   mainWindow.loadFile(path.join(__dirname, '..', 'src', 'index.html'));
@@ -557,6 +563,63 @@ function registerIpc() {
     controller.abort();
     return true;
   });
+
+  // PTY interativo do usuario (estritamente isolado do agente)
+  ipcMain.handle('pty:create', async (event, payload) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const windowId = win?.id ?? null;
+    const session = defaultPtyManager.createSession({
+      cwd: payload?.cwd,
+      cols: payload?.cols,
+      rows: payload?.rows,
+      windowId,
+      onData: (data) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('pty:data', { sessionId: session.sessionId, data });
+        }
+      },
+      onExit: ({ exitCode, signal }) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('pty:exit', { sessionId: session.sessionId, exitCode, signal });
+        }
+      },
+    });
+    return session;
+  });
+
+  ipcMain.handle('pty:write', async (_event, payload) => {
+    return defaultPtyManager.write(payload?.sessionId, payload?.data);
+  });
+
+  ipcMain.handle('pty:resize', async (_event, payload) => {
+    return defaultPtyManager.resize(payload?.sessionId, payload?.cols, payload?.rows);
+  });
+
+  ipcMain.handle('pty:kill', async (_event, payload) => {
+    return defaultPtyManager.killSession(payload?.sessionId);
+  });
+
+  ipcMain.handle('pty:restart', async (event, payload) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const windowId = win?.id ?? null;
+    const session = await defaultPtyManager.restartSession(payload?.sessionId, {
+      cwd: payload?.cwd,
+      cols: payload?.cols,
+      rows: payload?.rows,
+      windowId,
+      onData: (data) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('pty:data', { sessionId: session.sessionId, data });
+        }
+      },
+      onExit: ({ exitCode, signal }) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('pty:exit', { sessionId: session.sessionId, exitCode, signal });
+        }
+      },
+    });
+    return session;
+  });
 }
 
 app.whenReady().then(async () => {
@@ -591,6 +654,7 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   closeLoginWindow();
+  defaultPtyManager.disposeAll();
   for (const controller of activeChatRequests.values()) controller.abort();
   activeChatRequests.clear();
   backend?.server?.close();

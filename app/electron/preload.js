@@ -69,6 +69,23 @@ contextBridge.exposeInMainWorld('jarvis', {
   models: {
     list: () => ipcRenderer.invoke('models:list'),
   },
+  pty: {
+    create: (payload) => ipcRenderer.invoke('pty:create', payload),
+    write: (payload) => ipcRenderer.invoke('pty:write', payload),
+    resize: (payload) => ipcRenderer.invoke('pty:resize', payload),
+    kill: (payload) => ipcRenderer.invoke('pty:kill', payload),
+    restart: (payload) => ipcRenderer.invoke('pty:restart', payload),
+    onData: (callback) => {
+      const listener = (_event, msg) => callback(msg);
+      ipcRenderer.on('pty:data', listener);
+      return () => ipcRenderer.removeListener('pty:data', listener);
+    },
+    onExit: (callback) => {
+      const listener = (_event, msg) => callback(msg);
+      ipcRenderer.on('pty:exit', listener);
+      return () => ipcRenderer.removeListener('pty:exit', listener);
+    },
+  },
   backend: {
     health: () => ipcRenderer.invoke('backend:health'),
     chat: (payload) => ipcRenderer.invoke('backend:chat', payload),

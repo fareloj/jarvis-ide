@@ -447,6 +447,21 @@ kbd { padding: 1px 4px; border: 1px solid var(--line); border-bottom-width: 2px;
 .prompt-branch { color: #ff90b1; }
 .terminal-note { color: #777171; }
 
+/* PTY Terminal View */
+.pty-view { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--terminal); }
+.pty-header { height: 26px; flex: 0 0 26px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border-bottom: 1px solid #33302f; background: #262423; font-size: 10px; }
+.pty-status { display: flex; align-items: center; gap: 6px; color: #a8a4a4; }
+.pty-dot { width: 7px; height: 7px; border-radius: 50%; background: #62c5ee; display: inline-block; }
+.pty-dot.running { background: #4ec990; box-shadow: 0 0 6px rgba(78, 201, 144, 0.4); }
+.pty-dot.exited { background: #e06c75; }
+.pty-status-text { font-family: var(--font-mono); }
+.pty-actions { display: flex; align-items: center; gap: 4px; }
+.pty-actions .panel-icon { padding: 3px; border: 0; background: transparent; color: #aaa5a5; cursor: pointer; border-radius: 4px; }
+.pty-actions .panel-icon:hover { color: white; background: #383534; }
+.pty-container { flex: 1; min-height: 0; padding: 4px 8px; overflow: hidden; background: var(--terminal); }
+.pty-container .xterm { height: 100%; padding: 2px 0; }
+.pty-container .xterm-viewport { overflow-y: auto !important; }
+
 /* Inspector */
 .inspector-scroll { flex: 1; overflow: auto; }
 .inspector-section { padding: 14px; border-bottom: 1px solid var(--line-soft); }

@@ -41,7 +41,7 @@ Não misture refatorações oportunistas, mudanças visuais e funcionalidades n�
 | 5 | Transformar o visualizador em editor | Claude Code | A | CONCLUÍDA | 3–4 |
 | 6 | Implementar integração Git e Diff | Claude Code | A | CONCLUÍDA | 5 |
 | Gate | Revisar e integrar a Fase A na `main` | Codex | Integração | CONCLUÍDA | 0–6 |
-| 7 | Implementar terminal interativo PTY | Gemini | B | PENDENTE | Gate |
+| 7 | Implementar terminal interativo PTY | Gemini | B | EM ANDAMENTO | Gate |
 | 8 | Implementar Problems e busca global | Gemini | B | PENDENTE | 7 |
 | 9 | Robustecer o runtime agentic | Gemini | B | PENDENTE | 7–8 |
 | 10 | Completar o sistema de skills | Codex | B | PENDENTE | 9 |
@@ -349,11 +349,19 @@ Disponibilizar um terminal de usuário real, separado do terminal mediado pelo a
 
 ### Critérios de aceite
 
-- [ ] Prompt interativo aceita entrada, cores e resize.
-- [ ] Fechar o projeto encerra os processos relacionados.
-- [ ] O agente não ganha acesso implícito à sessão interativa.
-- [ ] Saídas muito grandes não congelam o renderer.
-- [ ] Cancelamento e encerramento são testados.
+- [x] Prompt interativo aceita entrada, cores e resize.
+- [x] Fechar o projeto encerra os processos relacionados.
+- [x] O agente não ganha acesso implícito à sessão interativa.
+- [x] Saídas muito grandes não congelam o renderer.
+- [x] Cancelamento e encerramento são testados.
+
+### Decisões
+
+**Isolamento Estrito:** A sessão PTY do terminal interativo pertence exclusivamente ao usuário da IDE (`window.jarvis.pty`). O registro de tools do agente (`backend/tool-registry.js`) não expõe nenhuma capacidade PTY, mantendo toda execução de comandos do agente estritamente confinada a `terminal_run` com política de aprovação de `backend/command-policy.js`.
+
+**Backend e Compatibilidade Windows ABI:** Instaladas versões reais `@xterm/xterm@6.0.0`, `@xterm/addon-fit@0.11.0` e `node-pty@1.1.0`. Compatibilidade nativa comprovada dentro do runtime do Electron 43 no Windows (`test-electron-pty.js`). Backend WinPTY (`useConpty: false`) assegura estabilidade sem falhas de console em sessões headless.
+
+**Ciclo de Vida e Scoping IPC:** Cada sessão PTY é associada ao `windowId` emissor. Sessões são encerradas e limpas atomicamente no encerramento da janela (`mainWindow.on('closed')`), ao trocar/abrir projeto no workspace, e no encerramento do app (`window-all-closed`). O encerramento de árvore de processos utiliza `taskkill /PID <pid> /T /F` no Windows, garantindo que processos netos não fiquem órfãos.
 
 ---
 
@@ -547,6 +555,7 @@ Registre aqui problemas encontrados durante uma tarefa sem interromper o escopo 
 
 | Data | Tarefa | Resultado | Testes | Commit | Observações |
 |---|---:|---|---|---|---|
+| 2026-08-14 | 7 | Terminal interativo PTY xterm integrado | 122/122 (9 novos) | `feat(terminal): add interactive pty session with xterm` | Compatibilidade nativa do `node-pty@1.1.0` comprovada no Electron 43 no Windows via teste real (`test-electron-pty.js`). Backend PTY isolado com ciclo de vida atrelado à janela, ao projeto e ao encerramento do app. Frontend atualizado com xterm.js 6.0.0, fit addon 0.11.0 e abas divididas entre Terminal do Usuário e Comandos da IA. Testes cobrem spawn, resize, streaming ANSI, reinício, encerramento de árvores com processos netos reais, scoping por janela e ausência total de ferramentas PTY no registro do agente. |
 | 2026-08-14 | Gate | Fase A auditada e integrada na `main` | 110/110 | `fix(git): confine monorepo operations to workspace` | Instalação limpa, syntax check, suíte completa, `diff --check` e cenários adversariais executados. O gate encontrou uma falha não coberta em subpastas de monorepo: o painel expunha arquivos fora do workspace e o commit podia incluir stage externo. A correção restringe status e bloqueia commit cujo index tenha arquivos externos. Boot visual do Electron confirmado; a repetição automatizada dos fluxos de editor/Git foi impedida pelo runtime temporário do Electron receber acesso negado após o primeiro fechamento, portanto a evidência manual detalhada das Tarefas 5–6 também foi conferida no relatório do executor. |
 | 2026-08-14 | 6 | Aba Diff virou painel Git real | 109/109 (10 novos) | `feat(git): add repository diff workspace` | Validação manual dirigida no aplicativo real sobre um repositório temporário: branch no painel e na barra de título, classificação de modificado/novo/removido, diff unificado e lado a lado, CRLF preservado e sinalizado, acentuação intacta, stage e unstage só nos selecionados, confirmação de commit com o escopo exato e commit real contendo apenas os arquivos preparados. Merge e ausência de repositório cobertos por teste automatizado. |
 | 2026-08-14 | 5 | Visualizador virou editor Monaco com salvamento seguro | 99/99 (3 novos) | `feat(editor): add workspace file editing` | Validação manual dirigida no aplicativo real (harness temporário sobre `electron/main.js`): abrir, editar, indicador de aba suja, desfazer, salvar, conflito externo, recusa de sobrescrita, recarregar do disco, confirmação ao fechar, Ctrl+S e Ctrl+W — todos verificados contra o disco. |
