@@ -35,6 +35,39 @@ test('pasta sem repositório recebe mensagem clara em vez de erro', async () => 
   await fs.rm(raiz, { recursive: true, force: true });
 });
 
+test('subpasta de monorepo mostra e commita somente o workspace aberto', async () => {
+  const raiz = await repositorioTemporario();
+  await fs.mkdir(path.join(raiz, 'app'));
+  await fs.writeFile(path.join(raiz, 'app', 'dentro.txt'), 'base\n', 'utf8');
+  await fs.writeFile(path.join(raiz, 'fora.txt'), 'base\n', 'utf8');
+  await execFileAsync('git', ['add', '.'], { cwd: raiz });
+  await execFileAsync('git', ['commit', '-m', 'base do monorepo'], { cwd: raiz });
+
+  const workspace = path.join(raiz, 'app');
+  await fs.writeFile(path.join(workspace, 'dentro.txt'), 'alterado\n', 'utf8');
+  await fs.writeFile(path.join(raiz, 'fora.txt'), 'alterado fora\n', 'utf8');
+
+  const status = await git.status(workspace);
+  assert.equal(status.subpastaDeRepositorio, true);
+  assert.deepEqual(status.naoPreparados.map((item) => item.path), ['dentro.txt']);
+
+  await git.stage(workspace, ['dentro.txt']);
+  await execFileAsync('git', ['add', '--', 'fora.txt'], { cwd: raiz });
+  await assert.rejects(
+    git.commit(workspace, 'fix: altera somente o app'),
+    /fora do projeto aberto/i,
+    'o commit nao pode incluir silenciosamente o index de outra pasta',
+  );
+
+  await execFileAsync('git', ['restore', '--staged', '--', 'fora.txt'], { cwd: raiz });
+  const resultado = await git.commit(workspace, 'fix: altera somente o app');
+  assert.deepEqual(resultado.arquivos, ['dentro.txt']);
+  const { stdout } = await execFileAsync('git', ['show', '--name-only', '--format=', 'HEAD'], { cwd: raiz });
+  assert.deepEqual(stdout.trim().split('\n'), ['app/dentro.txt']);
+
+  await fs.rm(raiz, { recursive: true, force: true });
+});
+
 test('status mostra branch e classifica modificado, novo e removido', async () => {
   const raiz = await repositorioTemporario();
   await commitInicial(raiz);

@@ -107,6 +107,32 @@ function descrever(codigo) {
   return ROTULOS[codigo] || 'alterado';
 }
 
+function prefixoDoWorkspace(topo, workspace) {
+  return path.relative(topo, workspace).split(path.sep).join('/');
+}
+
+function caminhoNoWorkspace(caminho, prefixo) {
+  if (!prefixo) return caminho;
+  const inicio = `${prefixo}/`;
+  return caminho.startsWith(inicio) ? caminho.slice(inicio.length) : null;
+}
+
+function restringirAoWorkspace(analisado, prefixo) {
+  const restringir = (itens) => itens.flatMap((item) => {
+    const caminho = caminhoNoWorkspace(item.path, prefixo);
+    if (caminho === null) return [];
+    const origem = item.origem ? caminhoNoWorkspace(item.origem, prefixo) : item.origem;
+    return [{ ...item, path: caminho, origem }];
+  });
+  return {
+    ...analisado,
+    staged: restringir(analisado.staged),
+    naoPreparados: restringir(analisado.naoPreparados),
+    naoRastreados: restringir(analisado.naoRastreados),
+    conflitos: restringir(analisado.conflitos),
+  };
+}
+
 // porcelain=v2 -z: registros separados por NUL. O formato v2 e' o unico que
 // distingue com seguranca renomeacao, conflito e o estado de index x arvore
 // sem depender de aspas e escapes no caminho.
@@ -179,8 +205,12 @@ async function status(projectPath) {
   }
 
   const { stdout: gitDirBruto } = await executarGit(raiz, ['rev-parse', '--absolute-git-dir']);
-  const { stdout: statusBruto } = await executarGit(raiz, ['status', '--porcelain=v2', '--branch', '-z']);
-  const analisado = interpretarStatus(statusBruto);
+  const { stdout: statusBruto } = await executarGit(
+    raiz,
+    ['status', '--porcelain=v2', '--branch', '-z', '--', '.'],
+  );
+  const prefixo = prefixoDoWorkspace(path.resolve(topo), raiz);
+  const analisado = restringirAoWorkspace(interpretarStatus(statusBruto), prefixo);
   const estado = await estadoEspecial(gitDirBruto.trim());
 
   // HEAD sem commit nenhum: `branch.oid` vem como "(initial)". Unstage por
@@ -290,6 +320,27 @@ async function commit(projectPath, message) {
     throw new Error('Nenhum arquivo preparado. Selecione o que deve entrar no commit.');
   }
 
+  // Um commit inclui todo o index do repositorio. Se o workspace aberto for
+  // apenas uma subpasta, recuse qualquer arquivo preparado fora dela para a
+  // confirmacao da interface continuar descrevendo o escopo real.
+  const { stdout: topoBruto } = await executarGit(raiz, ['rev-parse', '--show-toplevel']);
+  const topo = path.resolve(topoBruto.trim());
+  const prefixo = prefixoDoWorkspace(topo, raiz);
+  if (prefixo) {
+    const { stdout: completoBruto } = await executarGit(
+      topo,
+      ['status', '--porcelain=v2', '--branch', '-z'],
+    );
+    const completo = interpretarStatus(completoBruto);
+    const fora = completo.staged.filter((item) => caminhoNoWorkspace(item.path, prefixo) === null);
+    if (fora.length) {
+      throw new Error(
+        `Existem ${fora.length} arquivo(s) preparado(s) fora do projeto aberto. `
+        + 'Retire-os do stage ou abra a raiz do repositorio antes de commitar.',
+      );
+    }
+  }
+
   // -m com o texto como argumento separado: nada e' interpretado por shell.
   const { stdout } = await executarGit(raiz, ['commit', '-m', texto]);
   const { stdout: sha } = await executarGit(raiz, ['rev-parse', '--short', 'HEAD']);
@@ -308,6 +359,7 @@ module.exports = {
   diff,
   escopoDoCommit,
   interpretarStatus,
+  restringirAoWorkspace,
   stage,
   status,
   unstage,
