@@ -119,7 +119,9 @@ test('cancelar a delegação encerra a árvore de processos', { skip: !ehWindows
   );
   assert.ok(Date.now() - inicio < 20_000, 'o cancelamento não pode esperar o timeout');
 
-  // O neto continuaria escrevendo se só o pai tivesse morrido.
+  // Dá tempo para uma escrita já bufferizada antes do taskkill chegar ao disco;
+  // depois desse período o tamanho precisa permanecer estável.
+  await new Promise((resolve) => { setTimeout(resolve, 300); });
   const antes = (await fs.stat(marcador)).size;
   await new Promise((resolve) => { setTimeout(resolve, 1_200); });
   assert.equal((await fs.stat(marcador)).size, antes, 'o processo neto deveria estar encerrado');
@@ -139,6 +141,7 @@ test('timeout da delegação encerra a árvore e não deixa órfão', { skip: !e
   );
   assert.ok(Date.now() - inicio < 20_000);
 
+  await new Promise((resolve) => { setTimeout(resolve, 300); });
   const antes = (await fs.stat(marcador)).size;
   await new Promise((resolve) => { setTimeout(resolve, 1_200); });
   assert.equal((await fs.stat(marcador)).size, antes, 'o processo neto deveria estar encerrado');
