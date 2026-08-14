@@ -159,4 +159,3 @@ Entregue:
 12. instrução para o Codex revisar `gemini/runtime-phase`.
 
 O trabalho só será aceito após o Codex repetir os testes, revisar segurança e fazer o merge.
-
