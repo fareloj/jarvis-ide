@@ -25,5 +25,8 @@
   },
   "devDependencies": {
     "electron": "^43.3.0"
+  },
+  "overrides": {
+    "dompurify": "^3.4.13"
   }
 }
