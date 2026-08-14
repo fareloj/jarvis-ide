@@ -40,10 +40,10 @@ Não misture refatorações oportunistas, mudanças visuais e funcionalidades n�
 | 4 | Endurecer terminal e execução de processos | Claude Code | A | CONCLUÍDA | 3 |
 | 5 | Transformar o visualizador em editor | Claude Code | A | CONCLUÍDA | 3–4 |
 | 6 | Implementar integração Git e Diff | Claude Code | A | CONCLUÍDA | 5 |
-| Gate | Revisar e integrar a Fase A na `main` | Codex | Integração | PENDENTE | 0–6 |
-| 7 | Implementar terminal interativo PTY | Codex | B | PENDENTE | Gate |
-| 8 | Implementar Problems e busca global | Codex | B | PENDENTE | 7 |
-| 9 | Robustecer o runtime agentic | Codex | B | PENDENTE | 7–8 |
+| Gate | Revisar e integrar a Fase A na `main` | Codex | Integração | CONCLUÍDA | 0–6 |
+| 7 | Implementar terminal interativo PTY | Gemini | B | PENDENTE | Gate |
+| 8 | Implementar Problems e busca global | Gemini | B | PENDENTE | 7 |
+| 9 | Robustecer o runtime agentic | Gemini | B | PENDENTE | 7–8 |
 | 10 | Completar o sistema de skills | Codex | B | PENDENTE | 9 |
 | 11 | Melhorar ciclo de vida do RAG | Codex | B | PENDENTE | 9 |
 | 12 | Completar gerenciamento de memória | Codex | B | PENDENTE | 11 |
@@ -327,9 +327,11 @@ Antes da Tarefa 7, o Codex deve:
 7. fazer o merge validado na `main`;
 8. confirmar que a `main` está limpa e estável antes de começar a Fase B.
 
-## Fase B — Codex
+## Fase B — Gemini, com gate do Codex
 
-As tarefas abaixo pertencem ao Codex e só começam depois da conclusão do gate de integração.
+As tarefas 7–9 pertencem ao Gemini e só começam depois da conclusão do gate de integração.
+O Gemini trabalha em branch isolada, uma tarefa por vez, e não integra na `main`.
+O Codex revisa os commits, repete as validações e corrige regressões antes do merge.
 
 ## Tarefa 7 — Implementar terminal interativo PTY
 
@@ -545,6 +547,7 @@ Registre aqui problemas encontrados durante uma tarefa sem interromper o escopo 
 
 | Data | Tarefa | Resultado | Testes | Commit | Observações |
 |---|---:|---|---|---|---|
+| 2026-08-14 | Gate | Fase A auditada e integrada na `main` | 110/110 | `fix(git): confine monorepo operations to workspace` | Instalação limpa, syntax check, suíte completa, `diff --check` e cenários adversariais executados. O gate encontrou uma falha não coberta em subpastas de monorepo: o painel expunha arquivos fora do workspace e o commit podia incluir stage externo. A correção restringe status e bloqueia commit cujo index tenha arquivos externos. Boot visual do Electron confirmado; a repetição automatizada dos fluxos de editor/Git foi impedida pelo runtime temporário do Electron receber acesso negado após o primeiro fechamento, portanto a evidência manual detalhada das Tarefas 5–6 também foi conferida no relatório do executor. |
 | 2026-08-14 | 6 | Aba Diff virou painel Git real | 109/109 (10 novos) | `feat(git): add repository diff workspace` | Validação manual dirigida no aplicativo real sobre um repositório temporário: branch no painel e na barra de título, classificação de modificado/novo/removido, diff unificado e lado a lado, CRLF preservado e sinalizado, acentuação intacta, stage e unstage só nos selecionados, confirmação de commit com o escopo exato e commit real contendo apenas os arquivos preparados. Merge e ausência de repositório cobertos por teste automatizado. |
 | 2026-08-14 | 5 | Visualizador virou editor Monaco com salvamento seguro | 99/99 (3 novos) | `feat(editor): add workspace file editing` | Validação manual dirigida no aplicativo real (harness temporário sobre `electron/main.js`): abrir, editar, indicador de aba suja, desfazer, salvar, conflito externo, recusa de sobrescrita, recarregar do disco, confirmação ao fechar, Ctrl+S e Ctrl+W — todos verificados contra o disco. |
 | 2026-08-12 | 4 | Correção dos bloqueadores do gate | 96/96 (7 novos) | 4 commits `fix(execution): ...` | Aprovação volta a ser obrigatória em todo `terminal_run`; ambiente das CLIs delegadas saneado por allowlist; `killTree` + `AbortSignal` na delegação, verificados com processo neto real; segredos redigidos antes da auditoria. |
