@@ -308,6 +308,24 @@ function registerIpc() {
     return { path: relative.split(path.sep).join('/') };
   });
 
+  // Git pela ponte: cada acao e' um clique do usuario na aba Diff.
+  const rotaGit = (canal, rota, erroPadrao) => {
+    ipcMain.handle(canal, async (_event, payload) => {
+      const response = await backendFetch(rota, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || erroPadrao);
+      return data;
+    });
+  };
+  rotaGit('git:status', '/api/git/status', 'Falha ao ler o repositório.');
+  rotaGit('git:diff', '/api/git/diff', 'Falha ao ler o diff.');
+  rotaGit('git:stage', '/api/git/stage', 'Falha ao preparar os arquivos.');
+  rotaGit('git:unstage', '/api/git/unstage', 'Falha ao tirar os arquivos do commit.');
+  rotaGit('git:commit-scope', '/api/git/commit-scope', 'Falha ao ler o escopo do commit.');
+  rotaGit('git:commit', '/api/git/commit', 'Falha ao criar o commit.');
+
   ipcMain.handle('memory:forget-session', async (_event, payload) => {
     const response = await backendFetch('/api/memory/conversation/forget', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),

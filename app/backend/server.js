@@ -8,6 +8,7 @@ const { formatSkillsForPrompt, listSkills, loadActiveSkills } = require('./skill
 const tools = require('./tool-registry');
 const quota = require('./quota-monitor');
 const conversationMemory = require('./conversation-memory');
+const gitWorkspace = require('./git-workspace');
 const { createSkillReview } = require('./skill-review');
 
 const DEFAULT_MODEL = process.env.JARVIS_OLLAMA_MODEL || 'gpt-oss:120b-cloud';
@@ -490,6 +491,57 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
       if (request.method === 'POST' && request.url === '/api/project/preview') {
         const body = await readJson(request);
         sendJson(response, 200, await tools.previewProjectFile(body.projectPath, body.path));
+        return;
+      }
+
+      // Git: leitura livre; stage, unstage e commit existem porque a interface
+      // os chama por acao explicita do usuario. Nenhuma destas rotas vira tool
+      // do agente, e nenhuma delas faz push.
+      if (request.method === 'POST' && request.url === '/api/git/status') {
+        const body = await readJson(request);
+        try {
+          sendJson(response, 200, await gitWorkspace.status(body.projectPath));
+        } catch (error) {
+          // Falta de repositorio ou de Git e' um estado da interface, nao uma
+          // falha do backend: a aba precisa explicar o que fazer.
+          if (error?.code === 'GIT_INDISPONIVEL') {
+            sendJson(response, 200, { repositorio: false, motivo: error.message });
+            return;
+          }
+          throw error;
+        }
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/git/diff') {
+        const body = await readJson(request);
+        sendJson(response, 200, await gitWorkspace.diff(body.projectPath, {
+          path: body.path, staged: body.staged === true, untracked: body.untracked === true,
+        }));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/git/stage') {
+        const body = await readJson(request);
+        sendJson(response, 200, await gitWorkspace.stage(body.projectPath, body.paths));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/git/unstage') {
+        const body = await readJson(request);
+        sendJson(response, 200, await gitWorkspace.unstage(body.projectPath, body.paths));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/git/commit-scope') {
+        const body = await readJson(request);
+        sendJson(response, 200, await gitWorkspace.escopoDoCommit(body.projectPath));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/git/commit') {
+        const body = await readJson(request);
+        sendJson(response, 200, await gitWorkspace.commit(body.projectPath, body.message));
         return;
       }
 

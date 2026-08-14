@@ -172,6 +172,11 @@ const sidebarTemplates = {
   files: () => `
     <label class="sidebar-search"><i class="ph-duotone ph-magnifying-glass"></i><input id="projectFileFilter" placeholder="Buscar arquivos…"></label>
     <div class="file-tree" id="projectFileTree"><p class="empty-copy">${hasLocalProject() ? 'Carregando arquivos…' : 'Abra uma pasta local para explorar o projeto.'}</p></div>`,
+  git: () => `
+    <div class="sidebar-section">
+      <div class="sidebar-link active"><i class="ph-duotone ph-git-diff"></i>Alterações do projeto</div>
+      <div class="sidebar-link"><i class="ph-duotone ph-shield-check"></i>Stage e commit manuais</div>
+    </div>`,
   rag: () => `
     <div class="sidebar-section">
       <div class="sidebar-link active"><i class="ph-duotone ph-database"></i>Corpus do projeto</div>
@@ -190,6 +195,7 @@ const sidebarTemplates = {
 const navMeta = {
   chat: ['Conversas', 'chat'],
   files: ['Explorador', null],
+  git: ['Alterações', null],
   rag: ['RAG', null],
   history: ['Histórico', null],
   settings: ['Configurações', null],
@@ -569,6 +575,16 @@ function specialPage(type) {
       <div class="file-tabs-bar" id="fileTabsBar"></div>
       <div class="file-viewer" id="fileViewer">
         <div class="file-viewer-empty"><i class="ph-duotone ph-file-code"></i><h2>Selecione um arquivo</h2><p>O conteúdo é lido diretamente da pasta aberta e permanece limitado ao projeto.</p></div>
+      </div>`;
+  } else if (type === 'git') {
+    page.className = 'content-view git-page special-page';
+    page.innerHTML = `
+      <div class="file-browser-header">
+        <div><p class="eyebrow">Alterações</p><h1>${escapeHtml(state.project.name)}</h1></div>
+      </div>
+      <div class="git-layout">
+        <div class="git-panel" id="gitPanel"><p class="empty-copy">Lendo o repositório…</p></div>
+        <div class="file-viewer git-diff-pane" id="gitDiffPane"></div>
       </div>`;
   } else if (type === 'rag') {
     page.innerHTML = `
@@ -1325,6 +1341,7 @@ async function salvarAba(tab, { comoNovo = false } = {}) {
     renderEditorToolbar(tab);
     renderConflitoExterno(tab);
     log(`editor · ${resposta.tipo} ${tab.path}`);
+    carregarGit();
     toast('Arquivo salvo', `${tab.path} foi gravado no projeto.`);
   } catch (error) {
     toast('Falha ao salvar', error.message, 'error');
@@ -1436,6 +1453,10 @@ function switchNav(nav) {
       renderEditorTabs();
       renderActiveFile();
       verificarMudancasExternas();
+    }
+    if (nav === 'git') {
+      renderGitPanel();
+      carregarGit();
     }
   }
 }
@@ -2353,6 +2374,338 @@ function initBottomResize() {
   });
 }
 
+// --- Aba Diff: integração Git ----------------------------------------------
+//
+// Leitura é livre; stage, unstage e commit só acontecem por clique do usuário
+// nesta tela. O agente não tem tool de Git — nada aqui é acionado por modelo.
+const gitState = {
+  status: null,
+  carregando: false,
+  arquivo: null,      // { path, staged, untracked }
+  diff: '',
+  ladoALado: false,
+  selecionados: new Set(),
+  mensagem: '',
+};
+
+function gitChaveDoArquivo(arquivo) {
+  return `${arquivo.staged ? 'S' : arquivo.untracked ? 'U' : 'W'}:${arquivo.path}`;
+}
+
+// Um diff unificado vira duas colunas alinhadas: cada remoção casa com a
+// adição correspondente do mesmo bloco, e o que sobra fica vazio do outro
+// lado. Derivar do MESMO texto que a visão unificada mostra garante que as
+// duas visões nunca divergem.
+function paresLadoALado(linhas) {
+  const pares = [];
+  let i = 0;
+  while (i < linhas.length) {
+    const linha = linhas[i];
+    if (linha.startsWith('-')) {
+      const remocoes = [];
+      while (i < linhas.length && linhas[i].startsWith('-')) { remocoes.push(linhas[i]); i += 1; }
+      const adicoes = [];
+      while (i < linhas.length && linhas[i].startsWith('+')) { adicoes.push(linhas[i]); i += 1; }
+      const total = Math.max(remocoes.length, adicoes.length);
+      for (let j = 0; j < total; j += 1) pares.push([remocoes[j] ?? null, adicoes[j] ?? null]);
+      continue;
+    }
+    if (linha.startsWith('+')) {
+      const adicoes = [];
+      while (i < linhas.length && linhas[i].startsWith('+')) { adicoes.push(linhas[i]); i += 1; }
+      for (const adicao of adicoes) pares.push([null, adicao]);
+      continue;
+    }
+    pares.push([linha, linha]);
+    i += 1;
+  }
+  return pares;
+}
+
+function gitClasseDaLinha(linha) {
+  if (linha === null) return 'diff-vazio';
+  if (linha.startsWith('+')) return 'diff-add';
+  if (linha.startsWith('-')) return 'diff-del';
+  if (linha.startsWith('@@') || linha.startsWith('diff ') || linha.startsWith('index ')
+    || linha.startsWith('--- ') || linha.startsWith('+++ ')
+    || linha.startsWith('new file') || linha.startsWith('deleted file')) return 'diff-meta';
+  return '';
+}
+
+// O texto do Git chega inteiro; separamos por \n mas guardamos o \r para
+// mostrar o marcador CRLF em vez de silenciosamente comer o caractere.
+function gitLinhasDoDiff(texto) {
+  return String(texto || '').split('\n');
+}
+
+function gitTemCRLF(texto) {
+  return /\r\n/.test(String(texto || ''));
+}
+
+function renderGitDiff() {
+  const alvo = $('#gitDiffPane');
+  if (!alvo) return;
+
+  if (!gitState.arquivo) {
+    alvo.innerHTML = '<div class="file-viewer-empty"><i class="ph-duotone ph-git-diff"></i><h2>Selecione um arquivo</h2><p>O diff vem do próprio Git, sem reprocessamento.</p></div>';
+    return;
+  }
+
+  const arquivo = gitState.arquivo;
+  const cru = gitState.diff;
+  const crlf = gitTemCRLF(cru);
+  const linhas = gitLinhasDoDiff(cru).map((linha) => linha.replace(/\r$/, ''));
+  const cabecalho = `
+    <div class="file-viewer-toolbar">
+      <strong>${escapeHtml(arquivo.path)}</strong>
+      <span class="editor-toolbar-actions">
+        <span>${arquivo.staged ? 'preparado' : arquivo.untracked ? 'novo' : 'na árvore'} · ${crlf ? 'CRLF' : 'LF'}</span>
+        <button class="button compact secondary" data-git-action="toggle-side-by-side">
+          <i class="ph-duotone ${gitState.ladoALado ? 'ph-rows' : 'ph-columns'}"></i>${gitState.ladoALado ? 'Unificado' : 'Lado a lado'}
+        </button>
+      </span>
+    </div>`;
+
+  if (!cru.trim()) {
+    alvo.innerHTML = `${cabecalho}<div class="file-viewer-empty"><p>Sem diferenças de texto para mostrar.</p></div>`;
+    return;
+  }
+
+  if (!gitState.ladoALado) {
+    const corpo = linhas
+      .map((linha) => `<div class="diff-linha ${gitClasseDaLinha(linha)}">${escapeHtml(linha) || '&nbsp;'}</div>`)
+      .join('');
+    alvo.innerHTML = `${cabecalho}<div class="diff-unificado">${corpo}</div>`;
+    return;
+  }
+
+  const corpo = paresLadoALado(linhas).map(([esquerda, direita]) => `
+    <div class="diff-par">
+      <div class="diff-linha ${gitClasseDaLinha(esquerda)}">${esquerda === null ? '' : escapeHtml(esquerda) || '&nbsp;'}</div>
+      <div class="diff-linha ${gitClasseDaLinha(direita)}">${direita === null ? '' : escapeHtml(direita) || '&nbsp;'}</div>
+    </div>`).join('');
+  alvo.innerHTML = `${cabecalho}<div class="diff-lado-a-lado">${corpo}</div>`;
+}
+
+function gitLinhaDeArquivo(arquivo, { staged = false, untracked = false } = {}) {
+  const chave = gitChaveDoArquivo({ ...arquivo, staged, untracked });
+  const ativo = gitState.arquivo && gitChaveDoArquivo(gitState.arquivo) === chave;
+  const marcado = gitState.selecionados.has(chave);
+  return `
+    <div class="git-linha ${ativo ? 'ativa' : ''}">
+      <label class="git-marcador" title="Selecionar para ${staged ? 'tirar do commit' : 'preparar'}">
+        <input type="checkbox" data-git-select="${escapeHtml(chave)}" ${marcado ? 'checked' : ''}>
+      </label>
+      <button class="git-arquivo" data-git-file="${escapeHtml(arquivo.path)}" data-git-staged="${staged}" data-git-untracked="${untracked}" title="${escapeHtml(arquivo.path)}">
+        <i class="ph-duotone ${fileIcon(arquivo.path)}"></i>
+        <span class="git-caminho">${escapeHtml(arquivo.path)}</span>
+        <span class="git-estado git-estado-${escapeHtml(arquivo.estado.split(' ')[0])}">${escapeHtml(arquivo.estado)}</span>
+      </button>
+    </div>`;
+}
+
+function gitGrupo(titulo, arquivos, opcoes, acao, rotuloAcao) {
+  if (!arquivos.length) return '';
+  return `
+    <section class="git-grupo">
+      <header class="git-grupo-head">
+        <span>${titulo} <em>${arquivos.length}</em></span>
+        <button class="button compact secondary" data-git-action="${acao}">${rotuloAcao}</button>
+      </header>
+      ${arquivos.map((arquivo) => gitLinhaDeArquivo(arquivo, opcoes)).join('')}
+    </section>`;
+}
+
+function renderGitPanel() {
+  const painel = $('#gitPanel');
+  if (!painel) return;
+  const status = gitState.status;
+
+  if (gitState.carregando && !status) {
+    painel.innerHTML = '<p class="empty-copy">Lendo o repositório…</p>';
+    return;
+  }
+  if (!status) {
+    painel.innerHTML = '<p class="empty-copy">Abra uma pasta local para ver as alterações.</p>';
+    return;
+  }
+  if (!status.repositorio) {
+    painel.innerHTML = `
+      <div class="empty-state-card">
+        <i class="ph-duotone ph-git-branch"></i>
+        <h2>Sem repositório Git</h2>
+        <p>${escapeHtml(status.motivo || 'Esta pasta não é um repositório Git.')}</p>
+      </div>`;
+    renderGitDiff();
+    return;
+  }
+
+  const avisos = [];
+  if (status.estado) {
+    avisos.push(`<div class="git-aviso"><i class="ph-duotone ph-warning"></i><span>Repositório em <strong>${escapeHtml(status.estado)}</strong>. Termine ou aborte essa operação antes de commitar normalmente.</span></div>`);
+  }
+  if (status.conflitos.length) {
+    avisos.push(`<div class="git-aviso"><i class="ph-duotone ph-warning-octagon"></i><span>${status.conflitos.length} arquivo(s) em conflito. Resolva antes de commitar.</span></div>`);
+  }
+  if (status.subpastaDeRepositorio) {
+    avisos.push(`<div class="git-aviso suave"><i class="ph-duotone ph-info"></i><span>A pasta aberta está dentro de um repositório maior (<code>${escapeHtml(status.raiz)}</code>); o status é o do repositório inteiro.</span></div>`);
+  }
+
+  const preparados = status.staged || [];
+  painel.innerHTML = `
+    <div class="git-cabecalho">
+      <div class="git-branch">
+        <i class="ph-duotone ph-git-branch"></i>
+        <strong>${escapeHtml(status.branch || 'sem branch')}</strong>
+        ${status.upstream ? `<span class="muted">→ ${escapeHtml(status.upstream)}</span>` : '<span class="muted">sem upstream</span>'}
+        ${status.ahead ? `<span class="git-contador">↑${status.ahead}</span>` : ''}
+        ${status.behind ? `<span class="git-contador">↓${status.behind}</span>` : ''}
+      </div>
+      <button class="button compact secondary" data-git-action="refresh"><i class="ph-duotone ph-arrows-clockwise"></i>Atualizar</button>
+    </div>
+    ${avisos.join('')}
+    ${status.limpo ? '<p class="empty-copy">Nada alterado: a árvore de trabalho está limpa.</p>' : ''}
+    ${gitGrupo('Preparado para commit', preparados, { staged: true }, 'unstage-selected', 'Tirar selecionados')}
+    ${gitGrupo('Alterado', status.naoPreparados || [], {}, 'stage-selected', 'Preparar selecionados')}
+    ${gitGrupo('Em conflito', status.conflitos || [], {}, 'stage-selected', 'Preparar selecionados')}
+    ${gitGrupo('Novos arquivos', status.naoRastreados || [], { untracked: true }, 'stage-selected', 'Preparar selecionados')}
+    <section class="git-commit">
+      <label class="eyebrow" for="gitCommitMessage">Mensagem do commit</label>
+      <textarea id="gitCommitMessage" rows="3" placeholder="Descreva a alteração…">${escapeHtml(gitState.mensagem)}</textarea>
+      <div class="git-commit-acoes">
+        <span class="muted">${preparados.length} arquivo(s) preparado(s)</span>
+        <button class="button primary compact" data-git-action="commit" ${preparados.length ? '' : 'disabled'}>
+          <i class="ph-duotone ph-check"></i>Commitar
+        </button>
+      </div>
+    </section>`;
+
+  const campo = $('#gitCommitMessage');
+  campo?.addEventListener('input', () => { gitState.mensagem = campo.value; });
+  renderGitDiff();
+}
+
+async function carregarGit({ silencioso = true } = {}) {
+  if (!hasLocalProject()) { gitState.status = null; renderGitPanel(); return; }
+  gitState.carregando = true;
+  try {
+    gitState.status = await bridge.git.status({ projectPath: state.project.path });
+    atualizarBranchNoTopo();
+  } catch (error) {
+    gitState.status = { repositorio: false, motivo: error.message };
+    if (!silencioso) toast('Falha no Git', error.message, 'error');
+  } finally {
+    gitState.carregando = false;
+    renderGitPanel();
+  }
+}
+
+// A barra de título mostrava "main" fixo desde o início.
+function atualizarBranchNoTopo() {
+  const alvo = $('#projectCrumb .branch');
+  if (!alvo) return;
+  const status = gitState.status;
+  alvo.textContent = status?.repositorio ? (status.branch || 'sem branch') : 'sem git';
+}
+
+async function abrirDiff(arquivo) {
+  gitState.arquivo = arquivo;
+  gitState.diff = '';
+  renderGitPanel();
+  try {
+    const payload = await bridge.git.diff({
+      projectPath: state.project.path,
+      path: arquivo.path,
+      staged: arquivo.staged,
+      untracked: arquivo.untracked,
+    });
+    if (gitState.arquivo && gitState.arquivo.path === arquivo.path) {
+      gitState.diff = payload.grande
+        ? `Arquivo novo com ${formatBytes(payload.tamanho)}: grande demais para exibir o diff inteiro.`
+        : payload.diff;
+      renderGitDiff();
+    }
+  } catch (error) {
+    gitState.diff = '';
+    toast('Falha ao ler o diff', error.message, 'error');
+  }
+}
+
+function gitSelecionados({ staged }) {
+  const prefixo = staged ? 'S:' : null;
+  const caminhos = [];
+  for (const chave of gitState.selecionados) {
+    if (staged && chave.startsWith('S:')) caminhos.push(chave.slice(2));
+    if (!staged && (chave.startsWith('W:') || chave.startsWith('U:'))) caminhos.push(chave.slice(2));
+  }
+  return { caminhos: [...new Set(caminhos)], prefixo };
+}
+
+async function acaoDoGit(acao) {
+  if (acao === 'refresh') { await carregarGit({ silencioso: false }); return; }
+  if (acao === 'toggle-side-by-side') { gitState.ladoALado = !gitState.ladoALado; renderGitDiff(); return; }
+
+  if (acao === 'stage-selected' || acao === 'unstage-selected') {
+    const preparar = acao === 'stage-selected';
+    const { caminhos } = gitSelecionados({ staged: !preparar });
+    if (!caminhos.length) {
+      toast('Nada selecionado', 'Marque os arquivos que devem entrar nesta ação.', 'error');
+      return;
+    }
+    try {
+      // Só os caminhos marcados vão como argumento: nunca `git add .`.
+      gitState.status = preparar
+        ? await bridge.git.stage({ projectPath: state.project.path, paths: caminhos })
+        : await bridge.git.unstage({ projectPath: state.project.path, paths: caminhos });
+      gitState.selecionados.clear();
+      atualizarBranchNoTopo();
+      renderGitPanel();
+      log(`git · ${preparar ? 'stage' : 'unstage'} ${caminhos.length} arquivo(s)`);
+    } catch (error) {
+      toast(preparar ? 'Falha ao preparar' : 'Falha ao tirar do commit', error.message, 'error');
+    }
+    return;
+  }
+
+  if (acao === 'commit') {
+    const mensagem = ($('#gitCommitMessage')?.value || '').trim();
+    if (!mensagem) { toast('Mensagem vazia', 'Escreva a mensagem do commit.', 'error'); return; }
+
+    let escopo;
+    try {
+      // O escopo é relido do Git no momento da confirmação: o que o usuário
+      // aprova é exatamente o que será commitado, não uma lista em cache.
+      escopo = await bridge.git.commitScope({ projectPath: state.project.path });
+    } catch (error) {
+      toast('Falha ao ler o escopo', error.message, 'error');
+      return;
+    }
+    if (!escopo.arquivos.length) { toast('Nada preparado', 'Prepare ao menos um arquivo.', 'error'); return; }
+
+    const lista = escopo.arquivos.map((item) => `${item.estado} ${item.path}`).join('\n');
+    const confirmado = await confirmDialog({
+      title: `Commitar ${escopo.arquivos.length} arquivo(s)?`,
+      message: `Branch ${escopo.branch}${escopo.estado ? ` (em ${escopo.estado})` : ''}\n\n${lista}\n\n"${mensagem}"`,
+      confirmLabel: 'Commitar',
+    });
+    if (!confirmado) return;
+
+    try {
+      const resultado = await bridge.git.commit({ projectPath: state.project.path, message: mensagem });
+      gitState.status = resultado.status;
+      gitState.mensagem = '';
+      gitState.selecionados.clear();
+      gitState.arquivo = null;
+      atualizarBranchNoTopo();
+      renderGitPanel();
+      log(`git · commit ${resultado.sha}`);
+      toast('Commit criado', `${resultado.sha} · ${resultado.arquivos.length} arquivo(s).`);
+    } catch (error) {
+      toast('Falha ao commitar', error.message, 'error');
+    }
+  }
+}
+
 document.addEventListener('click', async (event) => {
   const skillPolicyTarget = event.target.closest('[data-skill-policy]');
   if (skillPolicyTarget) {
@@ -2369,6 +2722,22 @@ document.addEventListener('click', async (event) => {
   const editorActionTarget = event.target.closest('[data-editor-action]');
   if (editorActionTarget) {
     await acaoDoEditor(editorActionTarget.dataset.editorAction);
+    return;
+  }
+
+  const gitFileTarget = event.target.closest('[data-git-file]');
+  if (gitFileTarget) {
+    await abrirDiff({
+      path: gitFileTarget.dataset.gitFile,
+      staged: gitFileTarget.dataset.gitStaged === 'true',
+      untracked: gitFileTarget.dataset.gitUntracked === 'true',
+    });
+    return;
+  }
+
+  const gitActionTarget = event.target.closest('[data-git-action]');
+  if (gitActionTarget) {
+    await acaoDoGit(gitActionTarget.dataset.gitAction);
     return;
   }
 
@@ -2444,7 +2813,10 @@ document.addEventListener('click', async (event) => {
       }
       appendToolEvent(card.dataset.requestId, outcome.name, outcome.status === 'completed' ? 'Concluída' : 'Recusada', outcome.status === 'completed' ? 'success' : '');
       if (outcome.name === 'terminal_run' && outcome.result) appendTerminalResult(outcome.result);
-      if (outcome.status === 'completed') verificarMudancasExternas();
+      if (outcome.status === 'completed') {
+        verificarMudancasExternas();
+        carregarGit(); // escrita ou delegação aprovada muda o diff do projeto
+      }
       log(`tool · ${outcome.name || 'ação'} ${outcome.status}`);
       continueAfterTool(outcome);
     } catch (error) {
@@ -2550,6 +2922,14 @@ document.addEventListener('submit', async (event) => {
 });
 
 document.addEventListener('change', (event) => {
+  const gitSelect = event.target.closest('[data-git-select]');
+  if (gitSelect) {
+    const chave = gitSelect.dataset.gitSelect;
+    if (gitSelect.checked) gitState.selecionados.add(chave);
+    else gitState.selecionados.delete(chave);
+    return;
+  }
+
   const skillId = event.target.dataset.skillId;
   if (!skillId) return;
   const selected = new Set(state.activeSkills);

@@ -39,7 +39,7 @@ Não misture refatorações oportunistas, mudanças visuais e funcionalidades n�
 | 3 | Criar escrita e patch estruturados | Claude Code | A | CONCLUÍDA | 2 |
 | 4 | Endurecer terminal e execução de processos | Claude Code | A | CONCLUÍDA | 3 |
 | 5 | Transformar o visualizador em editor | Claude Code | A | CONCLUÍDA | 3–4 |
-| 6 | Implementar integração Git e Diff | Claude Code | A | PENDENTE | 5 |
+| 6 | Implementar integração Git e Diff | Claude Code | A | CONCLUÍDA | 5 |
 | Gate | Revisar e integrar a Fase A na `main` | Codex | Integração | PENDENTE | 0–6 |
 | 7 | Implementar terminal interativo PTY | Codex | B | PENDENTE | Gate |
 | 8 | Implementar Problems e busca global | Codex | B | PENDENTE | 7 |
@@ -282,11 +282,35 @@ Transformar a aba Diff em uma visão real das alterações do projeto.
 
 ### Critérios de aceite
 
-- [ ] Arquivos modificados, novos e removidos aparecem corretamente.
-- [ ] O diff preserva codificação e finais de linha.
-- [ ] Stage e unstage operam apenas nos arquivos selecionados.
-- [ ] Commit apresenta o escopo exato antes da confirmação.
-- [ ] Repositório inexistente ou em estado de merge possui mensagem clara.
+- [x] Arquivos modificados, novos e removidos aparecem corretamente.
+- [x] O diff preserva codificação e finais de linha.
+- [x] Stage e unstage operam apenas nos arquivos selecionados.
+- [x] Commit apresenta o escopo exato antes da confirmação.
+- [x] Repositório inexistente ou em estado de merge possui mensagem clara.
+
+### Decisões
+
+**Nada de shell.** `backend/git-workspace.js` chama `git` por `execFile` com
+argumentos em array e `--` separando opções de caminhos, então um arquivo
+chamado `--force` nunca vira flag. Todo caminho vindo da interface passa pelo
+mesmo confinamento ao workspace usado pelas tools de arquivo.
+
+**O agente não recebe tool de Git.** stage, unstage e commit existem só como
+rotas chamadas pela aba Alterações, por clique do usuário. `git push` não foi
+implementado, conforme o escopo.
+
+**`status --porcelain=v2 --branch -z`** é o único formato que distingue com
+segurança renomeação, conflito e index × árvore sem depender de aspas e
+escapes no caminho.
+
+**O diff sai como o Git escreveu:** nenhuma normalização de fim de linha ou
+reencodificação. As conversões de `core.autocrlf` do repositório continuam
+valendo, porque é esse o diff que o usuário vê no terminal; a interface
+apenas sinaliza CRLF/LF. A visão lado a lado é derivada do mesmo texto da
+visão unificada, então as duas nunca divergem.
+
+**Commit confirma com escopo relido do Git** no instante da confirmação, não
+com a lista em cache da tela.
 
 ---
 
@@ -521,6 +545,7 @@ Registre aqui problemas encontrados durante uma tarefa sem interromper o escopo 
 
 | Data | Tarefa | Resultado | Testes | Commit | Observações |
 |---|---:|---|---|---|---|
+| 2026-08-14 | 6 | Aba Diff virou painel Git real | 109/109 (10 novos) | `feat(git): add repository diff workspace` | Validação manual dirigida no aplicativo real sobre um repositório temporário: branch no painel e na barra de título, classificação de modificado/novo/removido, diff unificado e lado a lado, CRLF preservado e sinalizado, acentuação intacta, stage e unstage só nos selecionados, confirmação de commit com o escopo exato e commit real contendo apenas os arquivos preparados. Merge e ausência de repositório cobertos por teste automatizado. |
 | 2026-08-14 | 5 | Visualizador virou editor Monaco com salvamento seguro | 99/99 (3 novos) | `feat(editor): add workspace file editing` | Validação manual dirigida no aplicativo real (harness temporário sobre `electron/main.js`): abrir, editar, indicador de aba suja, desfazer, salvar, conflito externo, recusa de sobrescrita, recarregar do disco, confirmação ao fechar, Ctrl+S e Ctrl+W — todos verificados contra o disco. |
 | 2026-08-12 | 4 | Correção dos bloqueadores do gate | 96/96 (7 novos) | 4 commits `fix(execution): ...` | Aprovação volta a ser obrigatória em todo `terminal_run`; ambiente das CLIs delegadas saneado por allowlist; `killTree` + `AbortSignal` na delegação, verificados com processo neto real; segredos redigidos antes da auditoria. |
 | 2026-08-12 | 3 | Correção dos bloqueadores do gate | 92/92 (5 novos) | 4 commits `fix(tools): ...` | Revalidação de caminho na gravação (teste troca diretório por junction entre plano e aplicação); patch transacional; desfazer criação por hash; gravação atômica por rename. |

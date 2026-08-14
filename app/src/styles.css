@@ -741,6 +741,55 @@ kbd { padding: 1px 4px; border: 1px solid var(--line); border-bottom-width: 2px;
 .approval-diff .diff-del { color: #ff9b93; }
 .approval-diff .diff-meta { color: #8a8681; }
 
+/* Aba Diff: lista de alteracoes a' esquerda, diff do Git a' direita. Reusa
+   o bloco escuro do editor para as duas visoes do diff. */
+.git-page { display: flex; flex-direction: column; min-height: 0; }
+.git-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 12px; }
+.git-panel { min-height: 0; overflow-y: auto; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper-raised); }
+.git-diff-pane { min-height: 0; }
+
+.git-cabecalho { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.git-branch { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; }
+.git-branch > i { color: var(--cyan-dark); font-size: 15px; }
+.git-branch strong { color: var(--ink-1); }
+.git-branch .muted { font-size: 11px; }
+.git-contador { padding: 0 5px; border-radius: 5px; background: var(--surface); color: var(--ink-4); font: 10px var(--font-mono); }
+
+.git-aviso { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; padding: 8px 10px; border-radius: 8px; background: #fff6e0; color: var(--ink-2); font-size: 11.5px; line-height: 1.45; }
+.git-aviso > i { color: #b07d00; font-size: 15px; flex: none; }
+.git-aviso.suave { background: var(--surface-muted); }
+.git-aviso.suave > i { color: var(--ink-4); }
+.git-aviso code { font: 10px var(--font-mono); }
+
+.git-grupo { margin-bottom: 12px; }
+.git-grupo-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; padding: 0 2px; color: var(--ink-4); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; }
+.git-grupo-head em { font-style: normal; color: var(--ink-5); }
+.git-linha { display: flex; align-items: center; gap: 4px; border-radius: 6px; }
+.git-linha:hover { background: var(--surface); }
+.git-linha.ativa { background: var(--cyan-pale); }
+.git-marcador { display: grid; place-items: center; width: 24px; flex: none; }
+.git-arquivo { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; padding: 5px 6px 5px 0; background: transparent; border: 0; text-align: left; cursor: pointer; }
+.git-arquivo > i { flex: none; font-size: 14px; color: var(--ink-4); }
+.git-caminho { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; font: 11px var(--font-mono); color: var(--ink-2); }
+.git-estado { flex: none; padding: 1px 6px; border-radius: 5px; background: var(--surface); color: var(--ink-4); font-size: 9.5px; }
+.git-estado-modificado { background: var(--cyan-pale); color: var(--cyan-deep); }
+.git-estado-adicionado, .git-estado-novo { background: #eef3e6; color: #4b6b2a; }
+.git-estado-removido { background: var(--magenta-soft); color: var(--magenta-dark); }
+.git-estado-em { background: #ffe0e0; color: #a11; }
+
+.git-commit { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.git-commit textarea { width: 100%; margin-top: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font: 12px var(--font-ui); resize: vertical; }
+.git-commit-acoes { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; font-size: 11px; }
+
+.diff-unificado, .diff-lado-a-lado { flex: 1; min-height: 0; overflow: auto; padding: 8px 0; background: var(--terminal); }
+.diff-linha { padding: 0 12px; font: 11px/1.55 var(--font-mono); color: #e7e4e1; white-space: pre; }
+.diff-add { background: rgba(78, 148, 60, 0.22); color: #c6ecb6; }
+.diff-del { background: rgba(180, 60, 60, 0.22); color: #ffb9b3; }
+.diff-meta { color: #8a8681; }
+.diff-vazio { background: rgba(255, 255, 255, 0.03); }
+.diff-par { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; }
+.diff-par > .diff-linha { overflow-x: hidden; text-overflow: ellipsis; }
+
 .confirm-dialog { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; width: 420px; max-width: calc(100vw - 40px); padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper-raised); box-shadow: 0 18px 44px rgba(32, 30, 29, 0.22); animation: popover-in 160ms cubic-bezier(0.16, 1, 0.3, 1); }
 .confirm-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .confirm-head strong { font-family: var(--font-editorial); font-size: 17px; color: var(--ink-1); }

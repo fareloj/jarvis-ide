@@ -23,6 +23,14 @@ contextBridge.exposeInMainWorld('jarvis', {
     stat: (payload) => ipcRenderer.invoke('project:stat', payload),
     chooseSavePath: (payload) => ipcRenderer.invoke('project:choose-save-path', payload),
   },
+  git: {
+    status: (payload) => ipcRenderer.invoke('git:status', payload),
+    diff: (payload) => ipcRenderer.invoke('git:diff', payload),
+    stage: (payload) => ipcRenderer.invoke('git:stage', payload),
+    unstage: (payload) => ipcRenderer.invoke('git:unstage', payload),
+    commitScope: (payload) => ipcRenderer.invoke('git:commit-scope', payload),
+    commit: (payload) => ipcRenderer.invoke('git:commit', payload),
+  },
   attachments: {
     pick: () => ipcRenderer.invoke('attachments:pick'),
   },
