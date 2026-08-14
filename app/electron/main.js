@@ -627,9 +627,14 @@ function registerIpc() {
   });
 
   // PTY interativo do usuario (estritamente isolado do agente)
+  const ptyWindowId = (event) => {
+    const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
+    if (windowId === null || windowId === undefined) throw new Error('Janela solicitante inválida para operação PTY.');
+    return windowId;
+  };
+
   ipcMain.handle('pty:create', async (event, payload) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    const windowId = win?.id ?? null;
+    const windowId = ptyWindowId(event);
     const session = defaultPtyManager.createSession({
       cwd: payload?.cwd,
       cols: payload?.cols,
@@ -649,21 +654,20 @@ function registerIpc() {
     return session;
   });
 
-  ipcMain.handle('pty:write', async (_event, payload) => {
-    return defaultPtyManager.write(payload?.sessionId, payload?.data);
+  ipcMain.handle('pty:write', async (event, payload) => {
+    return defaultPtyManager.write(payload?.sessionId, payload?.data, ptyWindowId(event));
   });
 
-  ipcMain.handle('pty:resize', async (_event, payload) => {
-    return defaultPtyManager.resize(payload?.sessionId, payload?.cols, payload?.rows);
+  ipcMain.handle('pty:resize', async (event, payload) => {
+    return defaultPtyManager.resize(payload?.sessionId, payload?.cols, payload?.rows, ptyWindowId(event));
   });
 
-  ipcMain.handle('pty:kill', async (_event, payload) => {
-    return defaultPtyManager.killSession(payload?.sessionId);
+  ipcMain.handle('pty:kill', async (event, payload) => {
+    return defaultPtyManager.killSession(payload?.sessionId, ptyWindowId(event));
   });
 
   ipcMain.handle('pty:restart', async (event, payload) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    const windowId = win?.id ?? null;
+    const windowId = ptyWindowId(event);
     const session = await defaultPtyManager.restartSession(payload?.sessionId, {
       cwd: payload?.cwd,
       cols: payload?.cols,

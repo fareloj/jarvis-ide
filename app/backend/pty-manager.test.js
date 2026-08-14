@@ -181,6 +181,20 @@ test('operações em sessões inválidas são tratadas com segurança', async ()
   assert.equal(manager.getSession('sessao-fantasma'), null);
 });
 
+test('operações PTY recusam acesso de outra janela', async (t) => {
+  const manager = new PtyManager();
+  t.after(async () => manager.disposeAll());
+  const session = manager.createSession({ windowId: 101 });
+
+  assert.throws(() => manager.write(session.sessionId, 'echo ataque\r\n', 202), { code: 'PTY_OWNER_MISMATCH' });
+  assert.throws(() => manager.resize(session.sessionId, 100, 30, 202), { code: 'PTY_OWNER_MISMATCH' });
+  await assert.rejects(manager.killSession(session.sessionId, 202), { code: 'PTY_OWNER_MISMATCH' });
+  await assert.rejects(manager.restartSession(session.sessionId, { windowId: 202 }), { code: 'PTY_OWNER_MISMATCH' });
+
+  assert.ok(manager.getSession(session.sessionId));
+  assert.equal(await manager.killSession(session.sessionId, 101), true);
+});
+
 test('killTree encerra processos netos reais sem deixar órfãos', async (t) => {
   const tempFile = path.join(os.tmpdir(), `pty-child-alive-${Date.now()}.tmp`);
   const scriptPath = path.join(os.tmpdir(), `pty-spawn-child-${Date.now()}.js`);
@@ -192,7 +206,7 @@ test('killTree encerra processos netos reais sem deixar órfãos', async (t) => 
     `const { spawn } = require('child_process');
 const fs = require('fs');
 const sub = spawn(process.execPath, ['-e', 'setInterval(() => fs.writeFileSync("${tempFile.replace(/\\/g, '\\\\')}", "neto-vivo", "utf8"), 50); setTimeout(() => {}, 60000);'], {
-  detached: true,
+  detached: false,
   stdio: 'ignore'
 });
 console.log('NETO_PID:' + sub.pid);
@@ -201,7 +215,9 @@ setTimeout(() => {}, 60000);
     'utf8'
   );
 
-  t.after(() => {
+  let netoPid = null;
+  t.after(async () => {
+    if (netoPid) await killTree(netoPid);
     try { fs.unlinkSync(tempFile); } catch {}
     try { fs.unlinkSync(scriptPath); } catch {}
   });
@@ -225,20 +241,21 @@ setTimeout(() => {}, 60000);
 
   const match = output.match(/NETO_PID:(\d+)/);
   assert.ok(match, 'Deveria ter iniciado o processo neto');
-  const netoPid = Number(match[1]);
+  netoPid = Number(match[1]);
   assert.ok(netoPid > 0);
 
   // Mata a sessão PTY
   await manager.killSession(session.sessionId);
 
-  // Também garante a limpeza do neto se taskkill do PTY não o apanhar por ser detached
-  await killTree(netoPid);
+  const deadline = Date.now() + 5000;
+  let netoVivo = true;
+  while (netoVivo && Date.now() < deadline) {
+    try { process.kill(netoPid, 0); } catch { netoVivo = false; }
+    if (netoVivo) await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  assert.equal(netoVivo, false, 'killSession deve encerrar também o processo neto');
 
   // Verifica que a sessão não existe mais no manager
   assert.equal(manager.getSession(session.sessionId), null);
   await manager.disposeAll();
-});
-
-test.after(() => {
-  setTimeout(() => process.exit(0), 100);
 });

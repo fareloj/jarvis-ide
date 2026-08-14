@@ -73,6 +73,22 @@ function sanitizePtyEnv(extraEnv = {}) {
   return env;
 }
 
+async function disposePtyResources(session) {
+  for (const disposable of session?.disposables || []) {
+    try { disposable?.dispose?.(); } catch { /* noop */ }
+  }
+  const agent = session?.process?._agent;
+  const conoutConnection = agent?._conoutSocketWorker;
+  const conoutWorker = conoutConnection?._worker;
+  try { conoutConnection?.dispose?.(); } catch { /* noop */ }
+  try { await conoutWorker?.terminate?.(); } catch { /* noop */ }
+  try { agent?._inSocket?.destroy?.(); } catch { /* noop */ }
+  try { agent?._outSocket?.destroy?.(); } catch { /* noop */ }
+  try { session?.process?._inSocket?.destroy?.(); } catch { /* noop */ }
+  try { session?.process?._outSocket?.destroy?.(); } catch { /* noop */ }
+  try { session?.process?._socket?.destroy?.(); } catch { /* noop */ }
+}
+
 class PtyManager {
   constructor() {
     this.sessions = new Map();
@@ -121,13 +137,13 @@ class PtyManager {
       listeners: { onData, onExit },
     };
 
-    ptyProcess.onData((data) => {
+    const dataDisposable = ptyProcess.onData((data) => {
       if (session.status === 'running' && session.listeners.onData) {
         try { session.listeners.onData(data); } catch (e) { console.error('Erro em onData do PTY:', e); }
       }
     });
 
-    ptyProcess.onExit(({ exitCode, signal }) => {
+    const exitDisposable = ptyProcess.onExit(({ exitCode, signal }) => {
       session.status = 'exited';
       session.exitCode = exitCode;
       session.signal = signal;
@@ -136,7 +152,10 @@ class PtyManager {
         try { session.listeners.onExit({ exitCode, signal }); } catch (e) { console.error('Erro em onExit do PTY:', e); }
       }
       this.sessions.delete(sessionId);
+      void disposePtyResources(session);
     });
+
+    session.disposables = [dataDisposable, exitDisposable];
 
     this.sessions.set(sessionId, session);
 
@@ -152,6 +171,19 @@ class PtyManager {
 
   getSession(sessionId) {
     return this.sessions.get(sessionId) || null;
+  }
+
+  assertOwner(sessionId, windowId) {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.status !== 'running') {
+      throw new Error(`Sessão PTY ${sessionId} inexistente ou finalizada.`);
+    }
+    if (windowId === null || windowId === undefined || session.windowId !== windowId) {
+      const error = new Error('A sessão PTY não pertence à janela solicitante.');
+      error.code = 'PTY_OWNER_MISMATCH';
+      throw error;
+    }
+    return session;
   }
 
   listSessions(windowId = null) {
@@ -174,17 +206,19 @@ class PtyManager {
     return list;
   }
 
-  write(sessionId, data) {
-    const session = this.sessions.get(sessionId);
-    if (!session || session.status !== 'running') {
-      throw new Error(`Sessão PTY ${sessionId} inexistente ou finalizada.`);
-    }
+  write(sessionId, data, windowId = undefined) {
+    const session = windowId === undefined
+      ? this.sessions.get(sessionId)
+      : this.assertOwner(sessionId, windowId);
+    if (!session || session.status !== 'running') throw new Error(`Sessão PTY ${sessionId} inexistente ou finalizada.`);
     session.process.write(String(data ?? ''));
     return true;
   }
 
-  resize(sessionId, cols, rows) {
-    const session = this.sessions.get(sessionId);
+  resize(sessionId, cols, rows, windowId = undefined) {
+    const session = windowId === undefined
+      ? this.sessions.get(sessionId)
+      : this.assertOwner(sessionId, windowId);
     if (!session || session.status !== 'running') {
       return false;
     }
@@ -196,8 +230,10 @@ class PtyManager {
     return true;
   }
 
-  async killSession(sessionId) {
-    const session = this.sessions.get(sessionId);
+  async killSession(sessionId, windowId = undefined) {
+    const session = windowId === undefined
+      ? this.sessions.get(sessionId)
+      : this.assertOwner(sessionId, windowId);
     if (!session) return false;
     session.status = 'killed';
     this.sessions.delete(sessionId);
@@ -206,11 +242,13 @@ class PtyManager {
     if (session.pid) {
       await killTree(session.pid);
     }
+    await disposePtyResources(session);
     return true;
   }
 
   async restartSession(sessionId, options = {}) {
     const oldSession = this.sessions.get(sessionId);
+    if (oldSession && options.windowId !== undefined) this.assertOwner(sessionId, options.windowId);
     const windowId = oldSession?.windowId ?? options.windowId ?? null;
     const cwd = options.cwd || oldSession?.cwd;
     const cols = options.cols || oldSession?.cols || 80;
