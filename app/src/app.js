@@ -2927,16 +2927,22 @@ async function runProblemsCheck() {
   if (state.problemsRunning) return;
 
   state.problemsRunning = true;
+  state.problemsLastRunId = `prob-${crypto.randomUUID()}`;
   state.problemsStatusText = 'Executando diagnósticos…';
   updateProblemsUi();
 
   try {
-    const result = await bridge.problems.run({ projectPath: state.project.path });
+    const result = await bridge.problems.run({
+      projectPath: state.project.path,
+      runId: state.problemsLastRunId,
+    });
     state.problems = result.problems || [];
     state.problemsTotalErrors = result.totalErrors || 0;
     state.problemsTotalWarnings = result.totalWarnings || 0;
     state.problemsTotalInfos = result.totalInfos || 0;
-    state.problemsStatusText = `Concluído em ${result.durationMs}ms (${result.command})`;
+    state.problemsStatusText = result.status === 'cancelled'
+      ? 'Cancelado pelo usuário'
+      : `Concluído em ${result.durationMs}ms (${result.command})`;
     state.problemsLastRunId = result.runId;
   } catch (err) {
     state.problems = [{
@@ -3973,4 +3979,3 @@ checkHealth();
 promptQuotaLoginIfNeeded();
 startPtySession(state.project?.path);
 setInterval(loadQuota, 30 * 1000);
-

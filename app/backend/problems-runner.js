@@ -185,8 +185,9 @@ function normalizeProblemPath(rawFilePath, rootPath = '') {
 }
 
 class ProblemsRunner {
-  constructor() {
+  constructor({ resolveCommand = null } = {}) {
     this.activeRuns = new Map(); // runId -> { pid, abortController, status }
+    this.resolveCommand = resolveCommand;
   }
 
   async detectDefaultCheckCommand(projectPath) {
@@ -194,9 +195,10 @@ class ProblemsRunner {
     try {
       const data = JSON.parse(await fs.readFile(pkgPath, 'utf8'));
       const scripts = data.scripts || {};
-      if (scripts.check) return 'npm run check';
-      if (scripts.lint) return 'npm run lint';
-      if (scripts.test) return 'npm test';
+      const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+      if (scripts.check) return { executable: npm, args: ['run', 'check'], label: 'npm run check' };
+      if (scripts.lint) return { executable: npm, args: ['run', 'lint'], label: 'npm run lint' };
+      if (scripts.test) return { executable: npm, args: ['test'], label: 'npm test' };
     } catch {
       // Ignora ausência de package.json
     }
@@ -204,33 +206,51 @@ class ProblemsRunner {
     // Outros ecossistemas
     try {
       await fs.stat(path.join(projectPath, 'Cargo.toml'));
-      return 'cargo check';
+      return { executable: 'cargo', args: ['check'], label: 'cargo check' };
     } catch {}
 
     try {
       await fs.stat(path.join(projectPath, 'go.mod'));
-      return 'go vet ./...';
+      return { executable: 'go', args: ['vet', './...'], label: 'go vet ./...' };
     } catch {}
 
     try {
       await fs.stat(path.join(projectPath, 'pytest.ini'));
-      return 'pytest';
+      return { executable: 'pytest', args: [], label: 'pytest' };
     } catch {}
 
-    return 'npm test';
+    return { executable: process.platform === 'win32' ? 'npm.cmd' : 'npm', args: ['test'], label: 'npm test' };
   }
 
   async runDiagnostics({
     projectPath,
-    command = null,
+    runId: requestedRunId = null,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     extraEnv = {},
   } = {}) {
     const raiz = path.resolve(String(projectPath || ''));
     if (!raiz || raiz === '.') throw new Error('Nenhum projeto aberto para executar diagnósticos.');
 
-    const cmdToRun = command || (await this.detectDefaultCheckCommand(raiz));
-    const runId = `prob-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const runId = requestedRunId || `prob-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    if (!/^prob-[A-Za-z0-9_-]{8,120}$/.test(runId)) throw new Error('Identificador de diagnóstico inválido.');
+    if (this.activeRuns.has(runId)) throw new Error('Já existe um diagnóstico com este identificador.');
+
+    const runEntry = { runId, pid: null, command: null, status: 'starting' };
+    this.activeRuns.set(runId, runEntry);
+    let descriptor;
+    try {
+      descriptor = this.resolveCommand
+        ? await this.resolveCommand(raiz)
+        : await this.detectDefaultCheckCommand(raiz);
+    } catch (error) {
+      this.activeRuns.delete(runId);
+      throw error;
+    }
+    if (!descriptor || typeof descriptor.executable !== 'string' || !Array.isArray(descriptor.args)) {
+      this.activeRuns.delete(runId);
+      throw new Error('Comando de diagnóstico interno inválido.');
+    }
+    const commandLabel = descriptor.label || [descriptor.executable, ...descriptor.args].join(' ');
     const effectiveTimeout = Math.max(1000, Math.min(Number(timeoutMs) || DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS));
 
     const env = sanitizeProblemsEnv(extraEnv);
@@ -242,22 +262,19 @@ class ProblemsRunner {
       let truncated = false;
       let killedDueToTimeout = false;
 
-      const child = spawn(cmdToRun, {
-        shell: true,
+      const child = spawn(descriptor.executable, descriptor.args, {
+        shell: false,
         cwd: raiz,
         env,
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
-      const runEntry = {
-        runId,
-        pid: child.pid,
-        command: cmdToRun,
-        abortController,
-        status: 'running',
-      };
-      this.activeRuns.set(runId, runEntry);
+      runEntry.pid = child.pid;
+      runEntry.command = commandLabel;
+      runEntry.abortController = abortController;
+      if (runEntry.status === 'cancelled') void killTree(child.pid);
+      else runEntry.status = 'running';
 
       const timer = setTimeout(async () => {
         killedDueToTimeout = true;
@@ -303,7 +320,7 @@ class ProblemsRunner {
 
         resolve({
           runId,
-          command: cmdToRun,
+          command: commandLabel,
           exitCode: exitCode ?? (killedDueToTimeout ? -1 : 0),
           signal: signal || null,
           durationMs,
@@ -311,7 +328,7 @@ class ProblemsRunner {
           totalErrors,
           totalWarnings,
           totalInfos,
-          status: killedDueToTimeout ? 'timeout' : exitCode === 0 ? 'success' : 'failed',
+          status: killedDueToTimeout ? 'timeout' : runEntry.status === 'cancelled' ? 'cancelled' : exitCode === 0 ? 'success' : 'failed',
           rawOutput: outputBuffer,
           truncated,
         });
@@ -322,7 +339,7 @@ class ProblemsRunner {
         this.activeRuns.delete(runId);
         resolve({
           runId,
-          command: cmdToRun,
+          command: commandLabel,
           exitCode: -1,
           signal: null,
           durationMs: Date.now() - startTime,
@@ -351,7 +368,6 @@ class ProblemsRunner {
     const run = this.activeRuns.get(runId);
     if (!run) return false;
     run.status = 'cancelled';
-    this.activeRuns.delete(runId);
     if (run.pid) {
       await killTree(run.pid);
     }

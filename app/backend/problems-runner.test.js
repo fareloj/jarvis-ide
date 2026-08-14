@@ -78,14 +78,17 @@ test('runDiagnostics executa comando e reporta problemas encontrados', async (t)
     try { await fs.rm(tempDir, { recursive: true, force: true }); } catch {}
   });
 
-  const runner = new ProblemsRunner();
   const testScript = 'src/test-fail.js(12,4): error TS1005: ";" expected.\nsrc/warn.js:5:2: warning: unused variable';
+  const runner = new ProblemsRunner({
+    resolveCommand: async () => ({
+      executable: process.execPath,
+      args: ['-e', `process.stdout.write(${JSON.stringify(testScript)})`],
+      label: 'internal-test-diagnostics',
+    }),
+  });
 
   const result = await runner.runDiagnostics({
     projectPath: tempDir,
-    command: process.platform === 'win32'
-      ? `echo ${testScript.replace(/\n/g, ' & echo ')}`
-      : `printf "${testScript.replace(/\n/g, '\\n')}"`,
   });
 
   assert.equal(result.status, 'success');
@@ -106,12 +109,12 @@ test('runDiagnostics aplica timeout e encerra o processo se exceder tempo', asyn
     try { await fs.rm(tempDir, { recursive: true, force: true }); } catch {}
   });
 
-  const runner = new ProblemsRunner();
-  const slowCommand = `"${process.execPath}" -e "setTimeout(() => {}, 30000);"`;
+  const runner = new ProblemsRunner({
+    resolveCommand: async () => ({ executable: process.execPath, args: ['-e', 'setTimeout(() => {}, 30000)'], label: 'slow-test' }),
+  });
 
   const result = await runner.runDiagnostics({
     projectPath: tempDir,
-    command: slowCommand,
     timeoutMs: 1000,
   });
 
@@ -124,12 +127,13 @@ test('cancelRun interrompe a execução do diagnóstico', async (t) => {
     try { await fs.rm(tempDir, { recursive: true, force: true }); } catch {}
   });
 
-  const runner = new ProblemsRunner();
-  const slowCommand = `"${process.execPath}" -e "setTimeout(() => {}, 30000);"`;
+  const runner = new ProblemsRunner({
+    resolveCommand: async () => ({ executable: process.execPath, args: ['-e', 'setTimeout(() => {}, 30000)'], label: 'slow-test' }),
+  });
 
   const runPromise = runner.runDiagnostics({
     projectPath: tempDir,
-    command: slowCommand,
+    runId: 'prob-cancel-test-1234',
     timeoutMs: 15000,
   });
 
@@ -143,4 +147,23 @@ test('cancelRun interrompe a execução do diagnóstico', async (t) => {
 
   const result = await runPromise;
   assert.ok(result.durationMs < 5000);
+  assert.equal(result.status, 'cancelled');
+});
+
+test('ignora comando arbitrário vindo do renderer e executa somente resolução interna', async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-problems-injection-'));
+  const marker = path.join(tempDir, 'pwned.txt');
+  t.after(async () => fs.rm(tempDir, { recursive: true, force: true }).catch(() => {}));
+
+  const runner = new ProblemsRunner({
+    resolveCommand: async () => ({ executable: process.execPath, args: ['-e', 'process.exit(0)'], label: 'safe-check' }),
+  });
+  const malicious = process.platform === 'win32'
+    ? `echo pwned>"${marker}"`
+    : `touch "${marker}"`;
+  const result = await runner.runDiagnostics({ projectPath: tempDir, command: malicious });
+
+  assert.equal(result.status, 'success');
+  await assert.rejects(fs.stat(marker), { code: 'ENOENT' });
+  assert.equal(result.command, 'safe-check');
 });
