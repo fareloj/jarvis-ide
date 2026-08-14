@@ -477,6 +477,46 @@ function registerIpc() {
     if (!response.ok) throw new Error(data.error || 'Falha ao resolver a aprovação.');
     return data;
   });
+  ipcMain.handle('search:query', async (_event, payload) => {
+    const response = await backendFetch('/api/search', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha na busca global.');
+    return data;
+  });
+  ipcMain.handle('search:plan-replace', async (_event, payload) => {
+    const response = await backendFetch('/api/search/plan-replace', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao planejar substituição.');
+    return data;
+  });
+  ipcMain.handle('search:apply-replace', async (_event, payload) => {
+    const response = await backendFetch('/api/search/apply-replace', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao aplicar substituição.');
+    return data;
+  });
+  ipcMain.handle('problems:run', async (_event, payload) => {
+    const response = await backendFetch('/api/problems/run', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao executar diagnósticos.');
+    return data;
+  });
+  ipcMain.handle('problems:cancel', async (_event, payload) => {
+    const response = await backendFetch('/api/problems/cancel', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao cancelar diagnóstico.');
+    return data;
+  });
   ipcMain.handle('quota:get', async () => {
     const response = await backendFetch('/api/ollama/quota');
     return response.json();

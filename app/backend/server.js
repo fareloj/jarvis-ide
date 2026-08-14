@@ -11,6 +11,8 @@ const conversationMemory = require('./conversation-memory');
 const gitWorkspace = require('./git-workspace');
 const modelCatalog = require('./model-catalog');
 const { createSkillReview } = require('./skill-review');
+const searchEngine = require('./search-engine');
+const { defaultProblemsRunner } = require('./problems-runner');
 
 const DEFAULT_MODEL = process.env.JARVIS_OLLAMA_MODEL || 'gpt-oss:120b-cloud';
 const SKILL_REVIEW_MODEL = process.env.JARVIS_SKILL_REVIEW_MODEL || '';
@@ -571,6 +573,36 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
       if (request.method === 'POST' && request.url === '/api/project/stat') {
         const body = await readJson(request);
         sendJson(response, 200, await tools.statProjectFile(body.projectPath, body.path));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/search') {
+        const body = await readJson(request);
+        sendJson(response, 200, await searchEngine.searchProjectText(body));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/search/plan-replace') {
+        const body = await readJson(request);
+        sendJson(response, 200, await searchEngine.planSearchReplace(body));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/search/apply-replace') {
+        const body = await readJson(request, 5_000_000);
+        sendJson(response, 200, await searchEngine.applySearchReplace(body.plans));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/problems/run') {
+        const body = await readJson(request);
+        sendJson(response, 200, await defaultProblemsRunner.runDiagnostics(body));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/problems/cancel') {
+        const body = await readJson(request);
+        sendJson(response, 200, { cancelled: await defaultProblemsRunner.cancelRun(body.runId) });
         return;
       }
 

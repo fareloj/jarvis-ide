@@ -42,7 +42,7 @@ Não misture refatorações oportunistas, mudanças visuais e funcionalidades n�
 | 6 | Implementar integração Git e Diff | Claude Code | A | CONCLUÍDA | 5 |
 | Gate | Revisar e integrar a Fase A na `main` | Codex | Integração | CONCLUÍDA | 0–6 |
 | 7 | Implementar terminal interativo PTY | Gemini | B | CONCLUÍDA | Gate |
-| 8 | Implementar Problems e busca global | Gemini | B | EM ANDAMENTO | 7 |
+| 8 | Implementar Problems e busca global | Gemini | B | CONCLUÍDA | 7 |
 | 9 | Robustecer o runtime agentic | Gemini | B | PENDENTE | 7–8 |
 | 10 | Completar o sistema de skills | Codex | B | PENDENTE | 9 |
 | 11 | Melhorar ciclo de vida do RAG | Codex | B | PENDENTE | 9 |
@@ -381,11 +381,19 @@ Adicionar ferramentas mínimas de navegação e diagnóstico esperadas em uma ID
 
 ### Critérios de aceite
 
-- [ ] Busca encontra texto, arquivo e linha corretos.
-- [ ] Substituição nunca grava sem preview.
-- [ ] Problems abre a localização correta.
-- [ ] Resultados antigos são invalidados quando o arquivo muda.
-- [ ] Projetos grandes não bloqueiam a interface.
+- [x] Busca encontra texto, arquivo e linha corretos.
+- [x] Substituição nunca grava sem preview.
+- [x] Problems abre a localização correta.
+- [x] Resultados antigos são invalidados quando o arquivo muda.
+- [x] Projetos grandes não bloqueiam a interface.
+
+### Decisões
+
+**Substituição Transacional Obrigatória:** A substituição multi-arquivo de busca global reutiliza estritamente o mecanismo `planPatch` e `applyPatch` de `backend/file-write.js`. Um preview com diff unificado é calculado em memória e apresentado para confirmação do usuário. Ao confirmar, o patch é gravado atomicamente com rollback em caso de falha em qualquer arquivo.
+
+**Executor de Problems Saneado e Limitado:** Para impedir que o executor de Problems se torne um terminal irrestrito, a execução de testes/linters/compiladores opera sob allowlist rígida de variáveis de ambiente (`sanitizeProblemsEnv`), expurga todas as chaves e segredos de API, impõe timeout estrito (default 30s) com encerramento de árvore de processos (`killTree` / `taskkill /PID <pid> /T /F`), e impõe teto de buffer (100 KB, 1.000 linhas).
+
+**Navegação Direta no Monaco Editor:** Cliques em resultados de busca ou em linhas do painel Problems acionam `openFileTab(filePath, { line, column })`, navegando imediatamente para o arquivo e centralizando o cursor nas coordenadas exatas via `editor.revealPositionInCenter` e `editor.setPosition`.
 
 ---
 
@@ -555,6 +563,7 @@ Registre aqui problemas encontrados durante uma tarefa sem interromper o escopo 
 
 | Data | Tarefa | Resultado | Testes | Commit | Observações |
 |---|---:|---|---|---|---|
+| 2026-08-14 | 8 | Busca global e painel Problems com execução isolada | 134/134 (12 novos) | `feat(diagnostics): add global search and problems panel` | Busca textual e regex rápida ignorando dependências (.git, node_modules) e binários com match highlighting. Substituição multi-arquivo 100% transacional usando planPatch/applyPatch com preview de diff e rollback atômico. Executor de Problems em ambiente saneado por allowlist (sem vazamento de API keys), timeout estrito com kill de árvore de processos netos (taskkill /T /F), cancelamento via IPC e parser estruturado para TypeScript, ESLint, Python, Jest e Node test runner com navegação direta para linha e coluna no editor Monaco. |
 | 2026-08-14 | 7 | Terminal interativo PTY xterm integrado | 122/122 (9 novos) | `feat(terminal): add interactive pty session with xterm` | Compatibilidade nativa do `node-pty@1.1.0` comprovada no Electron 43 no Windows via teste real (`test-electron-pty.js`). Backend PTY isolado com ciclo de vida atrelado à janela, ao projeto e ao encerramento do app. Frontend atualizado com xterm.js 6.0.0, fit addon 0.11.0 e abas divididas entre Terminal do Usuário e Comandos da IA. Testes cobrem spawn, resize, streaming ANSI, reinício, encerramento de árvores com processos netos reais, scoping por janela e ausência total de ferramentas PTY no registro do agente. |
 | 2026-08-14 | Gate | Fase A auditada e integrada na `main` | 110/110 | `fix(git): confine monorepo operations to workspace` | Instalação limpa, syntax check, suíte completa, `diff --check` e cenários adversariais executados. O gate encontrou uma falha não coberta em subpastas de monorepo: o painel expunha arquivos fora do workspace e o commit podia incluir stage externo. A correção restringe status e bloqueia commit cujo index tenha arquivos externos. Boot visual do Electron confirmado; a repetição automatizada dos fluxos de editor/Git foi impedida pelo runtime temporário do Electron receber acesso negado após o primeiro fechamento, portanto a evidência manual detalhada das Tarefas 5–6 também foi conferida no relatório do executor. |
 | 2026-08-14 | 6 | Aba Diff virou painel Git real | 109/109 (10 novos) | `feat(git): add repository diff workspace` | Validação manual dirigida no aplicativo real sobre um repositório temporário: branch no painel e na barra de título, classificação de modificado/novo/removido, diff unificado e lado a lado, CRLF preservado e sinalizado, acentuação intacta, stage e unstage só nos selecionados, confirmação de commit com o escopo exato e commit real contendo apenas os arquivos preparados. Merge e ausência de repositório cobertos por teste automatizado. |

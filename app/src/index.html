@@ -121,6 +121,7 @@
         <nav class="activity-rail" aria-label="Navegação principal">
           <button class="rail-button active" data-nav="chat" title="Chat"><i class="ph-duotone ph-chat-teardrop-dots"></i></button>
           <button class="rail-button" data-nav="files" title="Arquivos"><i class="ph-duotone ph-files"></i></button>
+          <button class="rail-button" data-nav="search" title="Busca global"><i class="ph-duotone ph-magnifying-glass"></i></button>
           <button class="rail-button" data-nav="git" title="Alterações"><i class="ph-duotone ph-git-diff"></i></button>
           <button class="rail-button" data-nav="rag" title="RAG"><i class="ph-duotone ph-database"></i></button>
           <button class="rail-button" data-nav="history" title="Histórico"><i class="ph-duotone ph-clock-counter-clockwise"></i></button>
@@ -188,6 +189,7 @@
             <div class="bottom-resizer"></div>
             <div class="bottom-tabs">
               <button class="bottom-tab active" data-bottom="terminal">Terminal</button>
+              <button class="bottom-tab" data-bottom="problems">Problems <span class="badge problems-badge" id="problemsBadge">0</span></button>
               <button class="bottom-tab" data-bottom="agent-commands">Comandos da IA</button>
               <button class="bottom-tab" data-bottom="logs">Logs</button>
               <span class="tabs-spacer"></span>
@@ -205,6 +207,23 @@
                 </div>
               </div>
               <div class="pty-container" id="ptyContainer"></div>
+            </div>
+            <div class="problems-view hidden" id="problemsView" data-bottom-view="problems">
+              <div class="problems-toolbar">
+                <div class="problems-toolbar-left">
+                  <button class="button compact primary" id="runProblemsBtn"><i class="ph-duotone ph-play"></i>Verificar</button>
+                  <button class="button compact secondary hidden" id="cancelProblemsBtn"><i class="ph-duotone ph-stop"></i>Cancelar</button>
+                  <span class="problems-status-text" id="problemsStatusText">Nenhuma verificação executada</span>
+                </div>
+                <div class="problems-filter-chips">
+                  <button class="problems-chip active" data-problems-filter="all">Todos <span id="probCountAll">0</span></button>
+                  <button class="problems-chip error-chip" data-problems-filter="error">Erros <span id="probCountErr">0</span></button>
+                  <button class="problems-chip warning-chip" data-problems-filter="warning">Avisos <span id="probCountWarn">0</span></button>
+                </div>
+              </div>
+              <div class="problems-list" id="problemsList">
+                <p class="empty-copy">Clique em Verificar para rodar diagnósticos do projeto.</p>
+              </div>
             </div>
             <div class="terminal-output hidden" id="terminalOutput" data-bottom-view="agent-commands">
               <p><span class="prompt-project">jarvis</span> <span class="muted">on</span> <span class="prompt-branch">main</span> <span class="prompt-symbol">❯</span> <span class="muted">terminal mediado pelo agente</span></p>

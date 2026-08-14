@@ -31,6 +31,15 @@ contextBridge.exposeInMainWorld('jarvis', {
     commitScope: (payload) => ipcRenderer.invoke('git:commit-scope', payload),
     commit: (payload) => ipcRenderer.invoke('git:commit', payload),
   },
+  search: {
+    query: (payload) => ipcRenderer.invoke('search:query', payload),
+    planReplace: (payload) => ipcRenderer.invoke('search:plan-replace', payload),
+    applyReplace: (payload) => ipcRenderer.invoke('search:apply-replace', payload),
+  },
+  problems: {
+    run: (payload) => ipcRenderer.invoke('problems:run', payload),
+    cancel: (payload) => ipcRenderer.invoke('problems:cancel', payload),
+  },
   attachments: {
     pick: () => ipcRenderer.invoke('attachments:pick'),
   },

@@ -85,6 +85,28 @@ const state = {
   openTabs: [],
   activeTab: null,
   pendingAttachments: [],
+  searchQuery: '',
+  searchReplacement: '',
+  searchFilePattern: '',
+  searchCaseSensitive: false,
+  searchWholeWord: false,
+  searchRegex: false,
+  searchResults: [],
+  searchTotalMatches: 0,
+  searchFileCount: 0,
+  searchTruncated: false,
+  searchSummary: '',
+  searchBusy: false,
+  searchCollapsedFiles: new Set(),
+  searchDirty: false,
+  problems: [],
+  problemsTotalErrors: 0,
+  problemsTotalWarnings: 0,
+  problemsTotalInfos: 0,
+  problemsFilter: 'all',
+  problemsRunning: false,
+  problemsStatusText: 'Nenhuma verificação executada',
+  problemsLastRunId: null,
 };
 
 const elements = {
@@ -170,6 +192,34 @@ const sidebarTemplates = {
   files: () => `
     <label class="sidebar-search"><i class="ph-duotone ph-magnifying-glass"></i><input id="projectFileFilter" placeholder="Buscar arquivos…"></label>
     <div class="file-tree" id="projectFileTree"><p class="empty-copy">${hasLocalProject() ? 'Carregando arquivos…' : 'Abra uma pasta local para explorar o projeto.'}</p></div>`,
+  search: () => `
+    <div class="search-sidebar-view" id="searchSidebarView">
+      <div class="search-controls">
+        <div class="search-input-wrapper">
+          <input id="globalSearchInput" placeholder="Buscar no projeto…" value="${escapeHtml(state.searchQuery || '')}">
+          <div class="search-toggles">
+            <button class="search-toggle-btn ${state.searchCaseSensitive ? 'active' : ''}" id="toggleSearchCase" title="Diferenciar maiúsculas/minúsculas">Aa</button>
+            <button class="search-toggle-btn ${state.searchWholeWord ? 'active' : ''}" id="toggleSearchWord" title="Palavra inteira">\\b</button>
+            <button class="search-toggle-btn ${state.searchRegex ? 'active' : ''}" id="toggleSearchRegex" title="Expressão regular">.*</button>
+          </div>
+        </div>
+        <div class="search-input-wrapper">
+          <input id="globalReplaceInput" placeholder="Substituir por…" value="${escapeHtml(state.searchReplacement || '')}">
+        </div>
+        <div class="search-input-wrapper">
+          <input id="globalPatternInput" placeholder="Arquivos (ex: *.js, src/**)" value="${escapeHtml(state.searchFilePattern || '')}">
+        </div>
+        <div class="search-actions-row">
+          <button class="button compact primary" id="btnRunSearch"><i class="ph-duotone ph-magnifying-glass"></i>Buscar</button>
+          <button class="button compact secondary" id="btnPlanReplace" title="Substituição transacional"><i class="ph-duotone ph-pencil-simple-line"></i>Substituir tudo</button>
+          <button class="button compact secondary" id="btnClearSearch" title="Limpar"><i class="ph-duotone ph-x"></i></button>
+        </div>
+        <div class="search-summary-text" id="searchSummaryText">${escapeHtml(state.searchSummary || 'Digite um termo e pressione Enter.')}</div>
+      </div>
+      <div class="search-results-scroll" id="searchResultsContainer">
+        ${renderSearchResultsList()}
+      </div>
+    </div>`,
   git: () => `
     <div class="sidebar-section">
       <div class="sidebar-link active"><i class="ph-duotone ph-git-diff"></i>Alterações do projeto</div>
@@ -193,6 +243,7 @@ const sidebarTemplates = {
 const navMeta = {
   chat: ['Conversas', 'chat'],
   files: ['Explorador', null],
+  search: ['Busca global', null],
   git: ['Alterações', null],
   rag: ['RAG', null],
   history: ['Histórico', null],
@@ -1196,7 +1247,7 @@ function guardarPosicao() {
   }
 }
 
-async function openFileTab(filePath) {
+async function openFileTab(filePath, { line = null, column = null } = {}) {
   guardarPosicao();
   state.selectedFile = filePath;
   state.activeTab = filePath;
@@ -1209,7 +1260,20 @@ async function openFileTab(filePath) {
   renderProjectFiles($('#projectFileFilter')?.value || '');
   renderEditorTabs();
   renderActiveFile();
-  if (jaCarregada) return;
+
+  const applyCursor = () => {
+    if (line && editor && tab.model && editor.getModel() === tab.model) {
+      const col = column || 1;
+      editor.revealPositionInCenter({ lineNumber: line, column: col });
+      editor.setPosition({ lineNumber: line, column: col });
+      editor.focus();
+    }
+  };
+
+  if (jaCarregada) {
+    applyCursor();
+    return;
+  }
 
   try {
     const payload = await bridge.project.preview({ projectPath: state.project.path, path: filePath });
@@ -1219,7 +1283,10 @@ async function openFileTab(filePath) {
     Object.assign(tab, { kind: 'error', error: error.message });
   }
   renderEditorTabs();
-  if (state.activeTab === filePath) renderActiveFile();
+  if (state.activeTab === filePath) {
+    renderActiveFile();
+    setTimeout(applyCursor, 60);
+  }
 }
 
 // O hash vem do backend (mesma função usada pela escrita), então o valor que
@@ -1337,6 +1404,7 @@ async function salvarAba(tab, { comoNovo = false } = {}) {
     tab.conflitoExterno = null;
     tab.removidoNoDisco = false;
     tab.dirty = estaSuja(tab);
+    state.searchDirty = true;
     renderEditorTabs();
     renderEditorToolbar(tab);
     renderConflitoExterno(tab);
@@ -2706,6 +2774,261 @@ async function acaoDoGit(acao) {
   }
 }
 
+// --- Busca Global e Substituição Transacional -------------------------------
+function renderSearchResultsList() {
+  if (state.searchBusy) {
+    return '<p class="empty-copy"><i class="ph-duotone ph-circle-notch spin-icon"></i> Buscando no projeto…</p>';
+  }
+  if (!state.searchResults.length) {
+    if (state.searchQuery) return '<p class="empty-copy">Nenhum resultado encontrado.</p>';
+    return '<p class="empty-copy">Digite um termo e pressione Enter para buscar.</p>';
+  }
+
+  const groups = new Map();
+  for (const match of state.searchResults) {
+    if (!groups.has(match.path)) groups.set(match.path, []);
+    groups.get(match.path).push(match);
+  }
+
+  const html = [];
+  for (const [filePath, matches] of groups.entries()) {
+    const isCollapsed = state.searchCollapsedFiles.has(filePath);
+    const fileName = filePath.split('/').pop();
+    html.push(`
+      <div class="search-file-group" data-search-file-group="${escapeHtml(filePath)}">
+        <div class="search-file-header" data-toggle-search-file="${escapeHtml(filePath)}">
+          <i class="ph-duotone ${isCollapsed ? 'ph-caret-right' : 'ph-caret-down'}"></i>
+          <i class="ph-duotone ${fileIcon(filePath)}"></i>
+          <span title="${escapeHtml(filePath)}">${escapeHtml(fileName)}</span>
+          <span class="search-file-matches-count">${matches.length}</span>
+        </div>
+        ${isCollapsed ? '' : `
+          <div class="search-match-list">
+            ${matches.map((m) => {
+              const start = Math.max(0, m.column - 1);
+              const length = m.matchLength || 1;
+              const before = escapeHtml(m.lineContent.slice(0, start));
+              const matched = escapeHtml(m.lineContent.slice(start, start + length));
+              const after = escapeHtml(m.lineContent.slice(start + length));
+              return `
+                <div class="search-match-item" data-search-jump="${escapeHtml(m.path)}" data-search-line="${m.line}" data-search-col="${m.column}">
+                  <span class="search-match-line">${m.line}:</span>
+                  <span class="search-match-content">${before}<span class="search-highlight">${matched}</span>${after}</span>
+                </div>`;
+            }).join('')}
+          </div>`}
+      </div>
+    `);
+  }
+  return html.join('');
+}
+
+async function runGlobalSearch() {
+  const query = (state.searchQuery || '').trim();
+  if (!query) {
+    state.searchResults = [];
+    state.searchTotalMatches = 0;
+    state.searchFileCount = 0;
+    state.searchSummary = 'Digite um termo para buscar.';
+    renderSidebar();
+    return;
+  }
+  if (!hasLocalProject()) {
+    toast('Nenhum projeto', 'Abra uma pasta local para buscar.', 'error');
+    return;
+  }
+
+  state.searchBusy = true;
+  state.searchSummary = 'Buscando…';
+  renderSidebar();
+
+  try {
+    const res = await bridge.search.query({
+      projectPath: state.project.path,
+      query,
+      isRegex: state.searchRegex,
+      isCaseSensitive: state.searchCaseSensitive,
+      isWholeWord: state.searchWholeWord,
+      filePattern: state.searchFilePattern,
+    });
+    state.searchResults = res.results || [];
+    state.searchTotalMatches = res.totalMatches || 0;
+    state.searchFileCount = res.fileCount || 0;
+    state.searchTruncated = res.truncated || false;
+    state.searchDirty = false;
+    state.searchSummary = `${state.searchTotalMatches} resultado(s) em ${state.searchFileCount} arquivo(s)${res.truncated ? ' (limite atingido)' : ''}`;
+  } catch (err) {
+    state.searchResults = [];
+    state.searchSummary = `Erro: ${err.message}`;
+    toast('Falha na busca', err.message, 'error');
+  } finally {
+    state.searchBusy = false;
+    renderSidebar();
+  }
+}
+
+async function planGlobalReplace() {
+  const query = (state.searchQuery || '').trim();
+  if (!query) {
+    toast('Busca vazia', 'Digite o termo a ser substituído.', 'error');
+    return;
+  }
+  if (!hasLocalProject()) {
+    toast('Nenhum projeto', 'Abra uma pasta local para substituir.', 'error');
+    return;
+  }
+
+  try {
+    const plan = await bridge.search.planReplace({
+      projectPath: state.project.path,
+      query,
+      replacement: state.searchReplacement,
+      isRegex: state.searchRegex,
+      isCaseSensitive: state.searchCaseSensitive,
+      isWholeWord: state.searchWholeWord,
+      filePattern: state.searchFilePattern,
+    });
+
+    if (!plan.planos?.length) {
+      toast('Nada para substituir', 'Nenhuma ocorrência encontrada com os filtros atuais.');
+      return;
+    }
+
+    const resumoArquivos = plan.resumo.map((r) => escapeHtml(r)).join('<br>');
+    const confirmado = await confirmDialog({
+      title: `Substituir em ${plan.fileCount} arquivo(s)?`,
+      message: `<strong>Total de ocorrências:</strong> ${plan.totalMatches}<br><br><strong>Arquivos afetados:</strong><br>${resumoArquivos}<br><br><details style="margin-top:8px"><summary>Ver diff unificado</summary><pre style="max-height:200px;overflow:auto;font-size:10px">${escapeHtml(plan.diff)}</pre></details>`,
+      confirmLabel: 'Substituir Tudo (Transacional)',
+      danger: true,
+    });
+
+    if (!confirmado) return;
+
+    const aplicados = await bridge.search.applyReplace({ plans: plan.planos });
+    toast('Substituição concluída', `${aplicados.length} arquivo(s) atualizados com sucesso.`);
+    for (const tab of state.openTabs.filter(abaEditavel)) {
+      if (aplicados.some((a) => a.path === tab.path)) {
+        await recarregarAbaDoDisco(tab);
+      }
+    }
+    carregarGit();
+    await runGlobalSearch();
+  } catch (err) {
+    toast('Falha na substituição', err.message, 'error');
+  }
+}
+
+// --- Painel Problems / Diagnósticos -----------------------------------------
+async function runProblemsCheck() {
+  if (!hasLocalProject()) {
+    toast('Nenhum projeto', 'Abra uma pasta local para executar diagnósticos.', 'error');
+    return;
+  }
+  if (state.problemsRunning) return;
+
+  state.problemsRunning = true;
+  state.problemsStatusText = 'Executando diagnósticos…';
+  updateProblemsUi();
+
+  try {
+    const result = await bridge.problems.run({ projectPath: state.project.path });
+    state.problems = result.problems || [];
+    state.problemsTotalErrors = result.totalErrors || 0;
+    state.problemsTotalWarnings = result.totalWarnings || 0;
+    state.problemsTotalInfos = result.totalInfos || 0;
+    state.problemsStatusText = `Concluído em ${result.durationMs}ms (${result.command})`;
+    state.problemsLastRunId = result.runId;
+  } catch (err) {
+    state.problems = [{
+      path: 'workspace',
+      line: 1,
+      column: 1,
+      severity: 'error',
+      message: err.message,
+      source: 'runner',
+    }];
+    state.problemsTotalErrors = 1;
+    state.problemsTotalWarnings = 0;
+    state.problemsTotalInfos = 0;
+    state.problemsStatusText = 'Falha ao executar';
+    toast('Falha nos diagnósticos', err.message, 'error');
+  } finally {
+    state.problemsRunning = false;
+    updateProblemsUi();
+  }
+}
+
+async function cancelProblemsCheck() {
+  if (state.problemsLastRunId && bridge?.problems?.cancel) {
+    await bridge.problems.cancel({ runId: state.problemsLastRunId });
+    state.problemsRunning = false;
+    state.problemsStatusText = 'Cancelado pelo usuário';
+    updateProblemsUi();
+  }
+}
+
+function updateProblemsUi() {
+  const badge = document.getElementById('problemsBadge');
+  const total = state.problemsTotalErrors + state.problemsTotalWarnings;
+  if (badge) {
+    badge.textContent = total;
+    badge.className = `badge problems-badge ${state.problemsTotalErrors > 0 ? 'has-errors' : state.problemsTotalWarnings > 0 ? 'has-warnings' : ''}`;
+  }
+
+  const countAll = document.getElementById('probCountAll');
+  const countErr = document.getElementById('probCountErr');
+  const countWarn = document.getElementById('probCountWarn');
+  if (countAll) countAll.textContent = state.problems.length;
+  if (countErr) countErr.textContent = state.problemsTotalErrors;
+  if (countWarn) countWarn.textContent = state.problemsTotalWarnings;
+
+  const statusText = document.getElementById('problemsStatusText');
+  if (statusText) statusText.textContent = state.problemsStatusText;
+
+  const runBtn = document.getElementById('runProblemsBtn');
+  const cancelBtn = document.getElementById('cancelProblemsBtn');
+  if (runBtn) runBtn.classList.toggle('hidden', state.problemsRunning);
+  if (cancelBtn) cancelBtn.classList.toggle('hidden', !state.problemsRunning);
+
+  renderProblemsList();
+}
+
+function renderProblemsList() {
+  const container = document.getElementById('problemsList');
+  if (!container) return;
+
+  if (state.problemsRunning) {
+    container.innerHTML = '<p class="empty-copy"><i class="ph-duotone ph-circle-notch spin-icon"></i> Analisando projeto e executando verificações…</p>';
+    return;
+  }
+
+  const filter = state.problemsFilter || 'all';
+  const filtered = state.problems.filter((p) => {
+    if (filter === 'error') return p.severity === 'error';
+    if (filter === 'warning') return p.severity === 'warning';
+    return true;
+  });
+
+  if (!filtered.length) {
+    container.innerHTML = state.problems.length
+      ? '<p class="empty-copy">Nenhum problema corresponde ao filtro selecionado.</p>'
+      : '<p class="empty-copy">Nenhum problema encontrado no projeto.</p>';
+    return;
+  }
+
+  container.innerHTML = filtered.map((p) => {
+    const isErr = p.severity === 'error';
+    const iconClass = isErr ? 'ph-x-circle error' : p.severity === 'warning' ? 'ph-warning warning' : 'ph-info info';
+    return `
+      <div class="problem-row" data-problem-jump="${escapeHtml(p.path)}" data-problem-line="${p.line}" data-problem-col="${p.column}">
+        <i class="ph-duotone ${iconClass} problem-icon"></i>
+        <span class="problem-message" title="${escapeHtml(p.message)}">${escapeHtml(p.message)}</span>
+        ${p.source ? `<span class="problem-source">${escapeHtml(p.source)}</span>` : ''}
+        <span class="problem-location">${escapeHtml(p.path)}:${p.line}:${p.column}</span>
+      </div>`;
+  }).join('');
+}
+
 document.addEventListener('click', async (event) => {
   const skillPolicyTarget = event.target.closest('[data-skill-policy]');
   if (skillPolicyTarget) {
@@ -2875,6 +3198,93 @@ document.addEventListener('click', async (event) => {
   if (action === 'enter-workspace') enterWorkspace();
   if (action === 'open-project') openProject();
   if (action === 'new-chat') newChat();
+  const searchFileToggle = event.target.closest('[data-toggle-search-file]');
+  if (searchFileToggle) {
+    const p = searchFileToggle.dataset.toggleSearchFile;
+    if (state.searchCollapsedFiles.has(p)) state.searchCollapsedFiles.delete(p);
+    else state.searchCollapsedFiles.add(p);
+    const container = document.getElementById('searchResultsContainer') || document.getElementById('mainSearchResultsContainer');
+    if (container) container.innerHTML = renderSearchResultsList();
+    return;
+  }
+
+  const searchJump = event.target.closest('[data-search-jump]');
+  if (searchJump) {
+    const filePath = searchJump.dataset.searchJump;
+    const line = Number(searchJump.dataset.searchLine) || 1;
+    const col = Number(searchJump.dataset.searchCol) || 1;
+    switchNav('files');
+    await openFileTab(filePath, { line, column: col });
+    return;
+  }
+
+  const problemJump = event.target.closest('[data-problem-jump]');
+  if (problemJump) {
+    const filePath = problemJump.dataset.problemJump;
+    const line = Number(problemJump.dataset.problemLine) || 1;
+    const col = Number(problemJump.dataset.problemCol) || 1;
+    switchNav('files');
+    await openFileTab(filePath, { line, column: col });
+    return;
+  }
+
+  const problemsFilterBtn = event.target.closest('[data-problems-filter]');
+  if (problemsFilterBtn) {
+    state.problemsFilter = problemsFilterBtn.dataset.problemsFilter;
+    $$('.problems-chip').forEach((c) => c.classList.toggle('active', c === problemsFilterBtn));
+    renderProblemsList();
+    return;
+  }
+
+  if (event.target.closest('#runProblemsBtn')) {
+    await runProblemsCheck();
+    return;
+  }
+
+  if (event.target.closest('#cancelProblemsBtn')) {
+    await cancelProblemsCheck();
+    return;
+  }
+
+  if (event.target.closest('#toggleSearchCase') || event.target.closest('#mainToggleSearchCase')) {
+    state.searchCaseSensitive = !state.searchCaseSensitive;
+    renderSidebar();
+    return;
+  }
+
+  if (event.target.closest('#toggleSearchWord') || event.target.closest('#mainToggleSearchWord')) {
+    state.searchWholeWord = !state.searchWholeWord;
+    renderSidebar();
+    return;
+  }
+
+  if (event.target.closest('#toggleSearchRegex') || event.target.closest('#mainToggleSearchRegex')) {
+    state.searchRegex = !state.searchRegex;
+    renderSidebar();
+    return;
+  }
+
+  if (event.target.closest('#btnRunSearch') || event.target.closest('#mainBtnRunSearch')) {
+    await runGlobalSearch();
+    return;
+  }
+
+  if (event.target.closest('#btnPlanReplace') || event.target.closest('#mainBtnPlanReplace')) {
+    await planGlobalReplace();
+    return;
+  }
+
+  if (event.target.closest('#btnClearSearch')) {
+    state.searchQuery = '';
+    state.searchReplacement = '';
+    state.searchResults = [];
+    state.searchTotalMatches = 0;
+    state.searchFileCount = 0;
+    state.searchSummary = '';
+    renderSidebar();
+    return;
+  }
+
   if (action === 'toggle-sidebar') toggleSidebar();
   if (action === 'toggle-inspector') toggleInspector();
   if (action === 'toggle-bottom') elements.bottomPanel.classList.toggle('collapsed');
@@ -2943,6 +3353,51 @@ document.addEventListener('change', (event) => {
 document.addEventListener('input', (event) => {
   if (event.target.id === 'projectFileFilter') renderProjectFiles(event.target.value);
   if (event.target.id === 'ragInventoryFilter') renderRagInventory(event.target.value);
+  if (event.target.id === 'globalSearchInput' || event.target.id === 'mainSearchInput') {
+    state.searchQuery = event.target.value;
+  }
+  if (event.target.id === 'globalReplaceInput' || event.target.id === 'mainReplaceInput') {
+    state.searchReplacement = event.target.value;
+  }
+  if (event.target.id === 'globalPatternInput' || event.target.id === 'mainPatternInput') {
+    state.searchFilePattern = event.target.value;
+  }
+});
+
+document.addEventListener('keydown', async (event) => {
+  if (event.key === 'Enter') {
+    if (event.target.id === 'globalSearchInput' || event.target.id === 'mainSearchInput') {
+      event.preventDefault();
+      await runGlobalSearch();
+      return;
+    }
+    if (event.target.id === 'globalReplaceInput' || event.target.id === 'mainReplaceInput') {
+      event.preventDefault();
+      await planGlobalReplace();
+      return;
+    }
+  }
+
+  // Atalho global: Ctrl+Shift+F para abrir busca global
+  if ((event.ctrlKey || event.metaKey) && event.shiftKey && (event.key === 'F' || event.key === 'f')) {
+    event.preventDefault();
+    switchNav('search');
+    setTimeout(() => {
+      const input = document.getElementById('globalSearchInput') || document.getElementById('mainSearchInput');
+      input?.focus();
+      input?.select();
+    }, 60);
+    return;
+  }
+
+  // Atalho global: Ctrl+Shift+M para abrir painel Problems
+  if ((event.ctrlKey || event.metaKey) && event.shiftKey && (event.key === 'M' || event.key === 'm')) {
+    event.preventDefault();
+    elements.bottomPanel.classList.remove('collapsed');
+    const probTab = document.querySelector('.bottom-tab[data-bottom="problems"]');
+    probTab?.click();
+    return;
+  }
 });
 
 elements.chatForm.addEventListener('submit', (event) => {
