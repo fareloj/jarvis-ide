@@ -64,6 +64,22 @@ test('comando vazio ou gigante é recusado', () => {
   assert.equal(policy.decide('a'.repeat(9_000)).permitido, false);
 });
 
+test('modo bypass bloqueia System32 no cwd e no texto do comando', () => {
+  assert.throws(
+    () => policy.assertBypassCommandAllowed('Write-Output ok', path.join(process.env.SystemRoot || 'C:\\Windows', 'System32')),
+    /System32/i,
+  );
+  assert.throws(
+    () => policy.assertBypassCommandAllowed('Get-Content "$env:windir\\System32\\drivers\\etc\\hosts"', os.tmpdir()),
+    /System32/i,
+  );
+  assert.throws(
+    () => policy.assertBypassCommandAllowed('Get-Content (Join-Path $env:windir System32)', os.tmpdir()),
+    /System32/i,
+  );
+  assert.equal(policy.assertBypassCommandAllowed('npm test', os.tmpdir()), true);
+});
+
 test('o ambiente não herda segredos do processo', () => {
   process.env.JARVIS_TAVILY_API_KEY = 'tvly-segredo-de-teste';
   process.env.OLLAMA_API_KEY = 'chave-secreta';

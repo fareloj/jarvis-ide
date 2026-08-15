@@ -170,6 +170,7 @@ const DEFINITIONS = Object.freeze([
         properties: {
           agent: { type: 'string', enum: ['claude-code', 'codex', 'antigravity'], description: 'Qual agente de codificação usar.' },
           prompt: { type: 'string', description: 'A tarefa a delegar, em texto claro e autocontido.' },
+          timeout_seconds: { type: 'integer', minimum: 30, maximum: 3600, description: 'Timeout entre 30 segundos e 1 hora. O padrão é 30 minutos.' },
         },
         required: ['agent', 'prompt'],
       },
@@ -310,7 +311,7 @@ async function statProjectFile(projectPath, relativePath) {
   };
 }
 
-const DELEGATE_TIMEOUT_MS = 5 * 60_000;
+const DELEGATE_TIMEOUT_MS = 30 * 60_000;
 const DELEGATE_BINARIES = { 'claude-code': 'claude', codex: 'codex', antigravity: 'agy' };
 const DELEGATE_LABELS = { 'claude-code': 'Claude Code', codex: 'Codex CLI', antigravity: 'Antigravity CLI' };
 
@@ -339,7 +340,7 @@ const DELEGATE_MAX_BUFFER = 5_000_000;
 // deixa toda essa descendência rodando dentro do projeto do usuário depois do
 // timeout ou do cancelamento. Aqui o encerramento percorre a árvore inteira,
 // pelo mesmo caminho usado pelo terminal mediado (commandPolicy.killTree).
-function runCli(binary, args, { cwd, timeoutMs, signal }) {
+function runCli(binary, args, { cwd, timeoutMs, signal, onOutput }) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(Object.assign(new Error('Delegação cancelada.'), { cancelled: true }));
@@ -394,10 +395,14 @@ function runCli(binary, args, { cwd, timeoutMs, signal }) {
     signal?.addEventListener('abort', aoAbortar, { once: true });
 
     child.stdout.on('data', (chunk) => {
-      if (stdout.length < DELEGATE_MAX_BUFFER) stdout += chunk;
+      const text = chunk.toString();
+      if (stdout.length < DELEGATE_MAX_BUFFER) stdout += text;
+      onOutput?.('stdout', text);
     });
     child.stderr.on('data', (chunk) => {
-      if (stderr.length < DELEGATE_MAX_BUFFER) stderr += chunk;
+      const text = chunk.toString();
+      if (stderr.length < DELEGATE_MAX_BUFFER) stderr += text;
+      onOutput?.('stderr', text);
     });
     child.on('error', (error) => finish(reject, error)); // preserva error.code === 'ENOENT'
     child.on('close', (code) => {
@@ -408,7 +413,9 @@ function runCli(binary, args, { cwd, timeoutMs, signal }) {
   });
 }
 
-async function delegateCodingTask(projectPath, agent, prompt, { signal } = {}) {
+async function delegateCodingTask(projectPath, agent, prompt, {
+  signal, onOutput, timeoutMs = DELEGATE_TIMEOUT_MS,
+} = {}) {
   const cwd = path.resolve(String(projectPath || ''));
   const promptText = String(prompt || '').trim();
   if (!promptText) throw new Error('O prompt da delegação não pode ser vazio.');
@@ -422,7 +429,7 @@ async function delegateCodingTask(projectPath, agent, prompt, { signal } = {}) {
       // que o usuário já tem configurada.
       const { stdout } = await runCli(binary, [
         '-p', promptText, '--output-format', 'json', '--permission-mode', 'acceptEdits',
-      ], { cwd, timeoutMs: DELEGATE_TIMEOUT_MS, signal });
+      ], { cwd, timeoutMs, signal, onOutput });
       const parsed = JSON.parse(stdout);
       return { agent, result: String(parsed.result || '').trim() };
     }
@@ -431,7 +438,7 @@ async function delegateCodingTask(projectPath, agent, prompt, { signal } = {}) {
       const outputFile = path.join(os.tmpdir(), `jarvis-codex-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`);
       await runCli(binary, [
         'exec', promptText, '--sandbox', 'workspace-write', '--skip-git-repo-check', '--output-last-message', outputFile,
-      ], { cwd, timeoutMs: DELEGATE_TIMEOUT_MS, signal });
+      ], { cwd, timeoutMs, signal, onOutput });
       const result = await fs.readFile(outputFile, 'utf8').catch(() => '');
       await fs.unlink(outputFile).catch(() => {});
       return { agent, result: result.trim() };
@@ -447,15 +454,19 @@ async function delegateCodingTask(projectPath, agent, prompt, { signal } = {}) {
       // real de segurança já aconteceu no nível da tool do JARVIS.
       const { stdout } = await runCli(binary, [
         '-p', promptText, '--dangerously-skip-permissions',
-      ], { cwd, timeoutMs: DELEGATE_TIMEOUT_MS, signal });
+      ], { cwd, timeoutMs, signal, onOutput });
       return { agent, result: stdout.trim() };
     }
   } catch (error) {
     if (error.code === 'ENOENT') {
       throw new Error(`${DELEGATE_LABELS[agent]} não está instalado ou não está no PATH deste computador.`);
     }
-    if (error.timedOut) throw new Error(`${DELEGATE_LABELS[agent]} não respondeu a tempo.`);
-    if (error.cancelled) throw new Error(`${DELEGATE_LABELS[agent]} foi cancelado; a árvore de processos foi encerrada.`);
+    if (error.timedOut) {
+      throw Object.assign(new Error(`${DELEGATE_LABELS[agent]} não respondeu a tempo.`), { timedOut: true });
+    }
+    if (error.cancelled) {
+      throw Object.assign(new Error(`${DELEGATE_LABELS[agent]} foi cancelado; a árvore de processos foi encerrada.`), { cancelled: true });
+    }
     const detail = (error.stderr || error.stdout || error.message || '').toString().slice(0, 2000);
     throw new Error(`${DELEGATE_LABELS[agent]} falhou: ${detail}`);
   }
@@ -482,15 +493,25 @@ async function runTool(name, args = {}, context = {}) {
     const command = String(args.command || '').trim();
     const decisao = commandPolicy.decide(command);
     if (!decisao.permitido) throw new Error(decisao.motivo);
+    if (context.bypassCommands) {
+      commandPolicy.assertBypassCommandAllowed(command, projectPath);
+      decisao.exigeAprovacao = false;
+      decisao.motivo = 'Modo bypass autorizado pelo usuário.';
+    }
     return commandPolicy.runCommand(command, {
       cwd: path.resolve(projectPath),
       signal: context.signal,
       decisao,
+      onOutput: context.onOutput,
       timeoutMs: Math.max(1_000, Math.min(900_000, (Number(args.timeout_seconds) || 60) * 1_000)),
     });
   }
   if (name === 'delegate_coding_task') {
-    return delegateCodingTask(projectPath, args.agent, args.prompt, { signal: context.signal });
+    return delegateCodingTask(projectPath, args.agent, args.prompt, {
+      signal: context.signal,
+      onOutput: context.onOutput,
+      timeoutMs: Math.max(30_000, Math.min(3_600_000, (Number(args.timeout_seconds) || 1800) * 1_000)),
+    });
   }
   // As tools de escrita nunca chegam aqui pelo caminho normal: elas sao
   // aplicadas a partir do plano congelado em resolveApproval. Este ramo
@@ -501,66 +522,93 @@ async function runTool(name, args = {}, context = {}) {
   throw new Error(`Tool desconhecida: ${name}`);
 }
 
-// Aprovar um terminal não deve manter a requisição IPC presa até o processo
-// acabar. O renderer acompanha este job e só devolve o resultado ao modelo
-// quando há um estado final, inclusive timeout e falha com saída parcial.
-const terminalJobs = new Map();
+// Terminal e agentes delegados compartilham o mesmo ciclo de vida. Aprovar
+// devolve imediatamente um ID; stdout/stderr ficam disponíveis durante a
+// execução e o renderer entrega o estado final ao modelo quando o job fecha.
+const backgroundJobs = new Map();
+const JOB_OUTPUT_LIMIT = 500_000;
 
-function publicTerminalJob(job) {
+function publicBackgroundJob(job) {
   if (!job) return null;
   return {
     id: job.id,
+    name: job.name,
+    label: job.label,
     status: job.status,
     createdAt: job.createdAt,
     completedAt: job.completedAt || null,
     result: job.result || null,
     error: job.error || null,
+    output: { stdout: job.stdout, stderr: job.stderr },
   };
 }
 
-function startTerminalJob(pending) {
-  const id = `terminal-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+function startBackgroundJob(pending, runner = runTool) {
+  const prefix = pending.name === 'terminal_run' ? 'terminal' : 'delegate';
+  const id = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const controller = new AbortController();
   const job = {
     id,
+    name: pending.name,
+    label: pending.name === 'delegate_coding_task'
+      ? (DELEGATE_LABELS[pending.args.agent] || pending.args.agent)
+      : 'Terminal',
     status: 'running',
     createdAt: new Date().toISOString(),
     completedAt: null,
     result: null,
     error: null,
+    stdout: '',
+    stderr: '',
     controller,
   };
-  terminalJobs.set(id, job);
+  backgroundJobs.set(id, job);
 
-  runTool('terminal_run', pending.args, { ...pending.context, signal: controller.signal })
+  const onOutput = (stream, chunk) => {
+    const key = stream === 'stderr' ? 'stderr' : 'stdout';
+    job[key] = `${job[key]}${String(chunk || '')}`.slice(-JOB_OUTPUT_LIMIT);
+  };
+  runner(pending.name, pending.args, {
+    ...pending.context,
+    signal: controller.signal,
+    onOutput,
+  })
     .then((result) => {
       job.result = result;
-      job.status = result.status === 'timeout' ? 'timeout'
-        : result.status === 'cancelado' ? 'cancelled'
-          : result.exitCode === 0 ? 'completed' : 'failed';
+      if (pending.name === 'terminal_run') {
+        job.status = result.status === 'timeout' ? 'timeout'
+          : result.status === 'cancelado' ? 'cancelled'
+            : result.exitCode === 0 ? 'completed' : 'failed';
+      } else {
+        job.status = 'completed';
+      }
     })
     .catch((error) => {
-      job.status = error?.name === 'AbortError' ? 'cancelled' : 'failed';
+      job.status = error?.cancelled || error?.name === 'AbortError' ? 'cancelled'
+        : error?.timedOut ? 'timeout' : 'failed';
       job.error = error?.message || 'Falha inesperada ao executar o comando.';
     })
     .finally(() => {
       job.completedAt = new Date().toISOString();
-      setTimeout(() => terminalJobs.delete(id), 30 * 60_000).unref?.();
+      setTimeout(() => backgroundJobs.delete(id), 30 * 60_000).unref?.();
     });
 
-  return publicTerminalJob(job);
+  return publicBackgroundJob(job);
 }
 
-function getTerminalJob(id) {
-  return publicTerminalJob(terminalJobs.get(String(id || '')));
+function getBackgroundJob(id) {
+  return publicBackgroundJob(backgroundJobs.get(String(id || '')));
 }
 
-async function cancelTerminalJob(id) {
-  const job = terminalJobs.get(String(id || ''));
+async function cancelBackgroundJob(id) {
+  const job = backgroundJobs.get(String(id || ''));
   if (!job || job.status !== 'running') return false;
   job.controller.abort();
   return true;
 }
+
+const getTerminalJob = getBackgroundJob;
+const cancelTerminalJob = cancelBackgroundJob;
 
 // Calcula o efeito da escrita antes de pedir aprovacao. O plano fica
 // congelado no pedido: o que o usuario ve' no diff e' exatamente o que sera'
@@ -579,6 +627,18 @@ async function requestTool(name, args, context) {
   const definition = toolDefinition(name);
   if (!definition) throw new Error(`Tool desconhecida: ${name}`);
   if (definition.policy.approval === 'never') return { status: 'completed', result: await runTool(name, args, context) };
+
+  if (name === 'terminal_run' && context.bypassCommands === true) {
+    const command = String(args.command || '').trim();
+    const decisao = commandPolicy.decide(command);
+    if (!decisao.permitido) throw new Error(decisao.motivo);
+    commandPolicy.assertBypassCommandAllowed(command, context.projectPath);
+    return {
+      status: 'background',
+      name,
+      job: startBackgroundJob({ name, args, context, createdAt: Date.now() }),
+    };
+  }
 
   const plano = await planIfWrite(name, args, context);
   const id = `approval-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -606,8 +666,8 @@ async function resolveApproval(id, approved) {
     : null;
   if (!approved) return { status: 'denied', name: pending.name, _runtime: runtime };
 
-  if (pending.name === 'terminal_run') {
-    return { status: 'background', name: pending.name, job: startTerminalJob(pending), _runtime: runtime };
+  if (pending.name === 'terminal_run' || pending.name === 'delegate_coding_task') {
+    return { status: 'background', name: pending.name, job: startBackgroundJob(pending), _runtime: runtime };
   }
 
   if (pending.plano) {
@@ -621,11 +681,13 @@ async function resolveApproval(id, approved) {
 
 module.exports = {
   commandPolicy,
+  cancelBackgroundJob,
   cancelTerminalJob,
+  getBackgroundJob,
   getTerminalJob,
   delegateCodingTask,
   fileWrite, describeTools,
   runCli, listProjectDirectory, previewProjectFile, publicDefinitions,
   requestTool, resolveApproval, resolveProjectTarget, runTool,
-  saveProjectFile, statProjectFile,
+  saveProjectFile, startBackgroundJob, statProjectFile,
 };

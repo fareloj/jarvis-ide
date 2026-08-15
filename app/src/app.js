@@ -33,7 +33,7 @@ const initialSession = sessionStore.getActive()
 const ragProjects = JSON.parse(localStorage.getItem('jarvis:rag-projects') || '{}');
 const toolContinuationFallbacks = new Map();
 const queuedToolOutcomes = new Map();
-const terminalJobPolls = new Map();
+const backgroundJobPolls = new Map();
 
 // Skills relevantes das 22 importadas de tiagopgr/skills-ia (categoria Código) —
 // deixa de fora as que são mais "automação de negócio" (WhatsApp, planilhas,
@@ -77,6 +77,7 @@ const state = {
   ragCorpus: ragProjects[initialSession.project.path]?.corpus || null,
   activeSkills,
   toolsEnabled: localStorage.getItem('jarvis:tools-enabled') !== 'false',
+  bypassCommands: localStorage.getItem('jarvis:bypass-commands') === 'true',
   conversationMemoryEnabled: localStorage.getItem('jarvis:conversation-memory') !== 'false',
   continuousLearningEnabled: localStorage.getItem('jarvis:continuous-learning') !== 'false',
   skillReviewBusy: false,
@@ -131,6 +132,7 @@ const elements = {
   chatScroll: $('#chatScroll'),
   sendButton: $('#sendButton'),
   attachButton: $('#attachButton'),
+  bypassButton: $('#bypassButton'),
   attachmentsStrip: $('#attachmentsStrip'),
   connection: $('#connectionStatus'),
   welcomeBackend: $('#welcomeBackend'),
@@ -170,6 +172,26 @@ const elements = {
   inspectorWeeklyFill: $('#inspectorWeeklyFill'),
   openQuotaFromInspector: $('#openQuotaFromInspector'),
 };
+
+function executionPolicyPrompt() {
+  return state.bypassCommands
+    ? 'MODO BYPASS DE COMANDOS ATIVO. terminal_run é autorizado automaticamente pelo usuário e sempre executa como job em segundo plano. O backend continua bloqueando referências ao System32, aplicando timeout, ambiente saneado, auditoria e cancelamento. Não peça aprovação para terminal_run; use a tool e aguarde o resultado antes de afirmar que funcionou. Escritas estruturadas e delegações continuam seguindo suas próprias aprovações.'
+    : 'MODO PROTEGIDO ATIVO. Terminal, escrita e delegação exigem aprovação explícita na interface.';
+}
+
+function syncBypassUi() {
+  elements.bypassButton?.classList.toggle('active', state.bypassCommands);
+  elements.bypassButton?.setAttribute('aria-pressed', String(state.bypassCommands));
+  if (elements.bypassButton) {
+    elements.bypassButton.title = state.bypassCommands
+      ? 'Bypass ativo: comandos sem aprovação; System32 bloqueado'
+      : 'Ativar bypass de comandos';
+  }
+  const capability = $('#terminalCapability');
+  capability?.classList.toggle('bypass-active', state.bypassCommands);
+  const label = $('#terminalPolicyLabel');
+  if (label) label.textContent = state.bypassCommands ? 'Bypass ativo · System32 bloqueado' : 'Exige aprovação';
+}
 
 const sidebarTemplates = {
   chat: () => {
@@ -612,7 +634,8 @@ function specialPage(type) {
         </section>
         <section class="settings-group capabilities-group">
           <h2>Agente</h2>
-          <div class="setting-row"><span><strong>Tools</strong><small>Leituras automáticas; escrita e terminal exigem aprovação</small></span><button class="toggle ${state.toolsEnabled ? 'on' : ''}" data-action="toggle-tools" aria-label="Alternar tools"></button></div>
+          <div class="setting-row"><span><strong>Tools</strong><small>Leituras automáticas; mutações protegidas por política</small></span><button class="toggle ${state.toolsEnabled ? 'on' : ''}" data-action="toggle-tools" aria-label="Alternar tools"></button></div>
+          <div class="setting-row bypass-setting"><span><strong>Bypass de comandos</strong><small>Terminal sem aprovação; System32 continua bloqueado e toda execução é auditada</small></span><button class="toggle ${state.bypassCommands ? 'on danger' : ''}" data-action="toggle-command-bypass" aria-label="Alternar bypass de comandos"></button></div>
           <div id="toolCatalog" class="capability-list"><span class="empty-copy">Carregando tools…</span></div>
         </section>
         <section class="settings-group capabilities-group">
@@ -1729,12 +1752,14 @@ async function sendMessage(text) {
       sessionTitle: sessionStore.get(state.sessionId)?.title || '',
       conversationMemoryEnabled: state.conversationMemoryEnabled,
       toolsEnabled: state.toolsEnabled,
+      bypassCommands: state.bypassCommands,
       memoryContextIncluded: Boolean(persistentMemory),
       messages: [
         {
           role: 'system',
           content: BASE_SYSTEM_PROMPT,
         },
+        { role: 'system', content: executionPolicyPrompt() },
         {
           role: 'system',
           content: currentDateContext(),
@@ -1833,9 +1858,11 @@ async function commitEditedMessage(messageIndex, editedText) {
       sessionTitle: sessionStore.get(state.sessionId)?.title || '',
       conversationMemoryEnabled: state.conversationMemoryEnabled,
       toolsEnabled: state.toolsEnabled,
+      bypassCommands: state.bypassCommands,
       memoryContextIncluded: Boolean(persistentMemory),
       messages: [
         { role: 'system', content: BASE_SYSTEM_PROMPT },
+        { role: 'system', content: executionPolicyPrompt() },
         { role: 'system', content: currentDateContext() },
         ...(persistentMemory ? [{
           role: 'system',
@@ -1931,6 +1958,12 @@ function handleChatEvent(event = {}) {
     appendApprovalEvent(requestId, event.payload);
     return;
   }
+  if (event.type === 'background.started') {
+    const name = event.payload?.name || 'tool';
+    appendToolEvent(requestId, name, 'Executando em segundo plano…');
+    monitorBackgroundJob(event.payload?.job, { requestId, sessionId: state.sessionId, approvalCard: null });
+    return;
+  }
 
   if (event.type === 'message.delta') {
     typingIndicator(requestId)?.remove();
@@ -1951,7 +1984,7 @@ function handleChatEvent(event = {}) {
 
   if (event.type === 'message.done') {
     const typing = typingIndicator(requestId);
-    if (event.payload?.awaitingApproval && !assistantBubbles(requestId).length) {
+    if ((event.payload?.awaitingApproval || event.payload?.awaitingBackground) && !assistantBubbles(requestId).length) {
       typing?.remove();
       finishChatRequest(requestId);
       return;
@@ -2061,18 +2094,28 @@ function continueAfterTool(outcome, { sessionId = state.sessionId } = {}) {
   }
 }
 
-function monitorTerminalJob(job, { requestId, sessionId, approvalCard }) {
-  if (!job?.id || terminalJobPolls.has(job.id)) return;
-  terminalJobPolls.set(job.id, true);
+function monitorBackgroundJob(job, { requestId, sessionId, approvalCard }) {
+  if (!job?.id || backgroundJobPolls.has(job.id)) return;
+  backgroundJobPolls.set(job.id, true);
 
   const poll = async () => {
     try {
-      const current = await bridge.tools.terminalJob({ id: job.id });
+      const current = await bridge.tools.backgroundJob({ id: job.id });
       if (current.status === 'running') {
+        if (approvalCard?.isConnected) {
+          let live = $('.approval-result', approvalCard);
+          if (!live) {
+            live = document.createElement('pre');
+            live.className = 'approval-result live-output';
+            approvalCard.append(live);
+          }
+          live.textContent = [current.output?.stdout, current.output?.stderr].filter(Boolean).join('\n').slice(-20_000)
+            || `${current.label || 'Job'} em execução…`;
+        }
         setTimeout(poll, 750);
         return;
       }
-      terminalJobPolls.delete(job.id);
+      backgroundJobPolls.delete(job.id);
       const result = current.result || { status: current.status, stderr: current.error || '', exitCode: -1 };
       const tone = current.status === 'completed' ? 'success' : '';
       const label = current.status === 'timeout' ? 'Timeout'
@@ -2080,21 +2123,25 @@ function monitorTerminalJob(job, { requestId, sessionId, approvalCard }) {
           : current.status === 'completed' ? 'Concluída' : 'Falhou';
       if (approvalCard?.isConnected) {
         const actions = $('.approval-actions', approvalCard);
-        if (actions) actions.innerHTML = `<span>${escapeHtml(`Terminal ${label.toLowerCase()}`)}</span>`;
+        if (actions) actions.innerHTML = `<span>${escapeHtml(`${current.label || 'Job'} ${label.toLowerCase()}`)}</span>`;
       }
       if (sessionId === state.sessionId) {
-        appendToolEvent(requestId, 'terminal_run', label, tone);
-        appendTerminalResult(result);
+        appendToolEvent(requestId, current.name || 'tool', label, tone);
+        if (current.name === 'terminal_run') appendTerminalResult(result);
       }
-      toast(`Terminal ${label.toLowerCase()}`, current.status === 'completed'
+      toast(`${current.label || 'Job'} ${label.toLowerCase()}`, current.status === 'completed'
         ? 'O output foi devolvido ao modelo.'
         : 'O estado final e a saída disponível foram devolvidos ao modelo.', current.status === 'completed' ? '' : 'error');
-      continueAfterTool({ name: 'terminal_run', status: current.status, result }, { sessionId });
+      if (current.name === 'delegate_coding_task') {
+        verificarMudancasExternas();
+        carregarGit();
+      }
+      continueAfterTool({ name: current.name || 'tool', status: current.status, result, output: current.output }, { sessionId });
     } catch (error) {
-      terminalJobPolls.delete(job.id);
+      backgroundJobPolls.delete(job.id);
       const result = { status: 'failed', stderr: error.message, exitCode: -1 };
-      if (sessionId === state.sessionId) appendToolEvent(requestId, 'terminal_run', 'Falha ao acompanhar', '');
-      continueAfterTool({ name: 'terminal_run', status: 'failed', result }, { sessionId });
+      if (sessionId === state.sessionId) appendToolEvent(requestId, job.name || 'tool', 'Falha ao acompanhar', '');
+      continueAfterTool({ name: job.name || 'tool', status: 'failed', result }, { sessionId });
     }
   };
   setTimeout(poll, 250);
@@ -3125,16 +3172,16 @@ function renderProblemsList() {
 }
 
 document.addEventListener('click', async (event) => {
-  const cancelTerminalTarget = event.target.closest('[data-cancel-terminal-job]');
-  if (cancelTerminalTarget) {
-    cancelTerminalTarget.disabled = true;
-    cancelTerminalTarget.textContent = 'Cancelando…';
+  const cancelBackgroundTarget = event.target.closest('[data-cancel-background-job]');
+  if (cancelBackgroundTarget) {
+    cancelBackgroundTarget.disabled = true;
+    cancelBackgroundTarget.textContent = 'Cancelando…';
     try {
-      await bridge.tools.cancelTerminalJob({ id: cancelTerminalTarget.dataset.cancelTerminalJob });
+      await bridge.tools.cancelBackgroundJob({ id: cancelBackgroundTarget.dataset.cancelBackgroundJob });
     } catch (error) {
-      toast('Falha ao cancelar terminal', error.message, 'error');
-      cancelTerminalTarget.disabled = false;
-      cancelTerminalTarget.textContent = 'Cancelar comando';
+      toast('Falha ao cancelar job', error.message, 'error');
+      cancelBackgroundTarget.disabled = false;
+      cancelBackgroundTarget.textContent = 'Cancelar';
     }
     return;
   }
@@ -3238,7 +3285,7 @@ document.addEventListener('click', async (event) => {
       const background = outcome.status === 'background';
       card.classList.add(outcome.status === 'completed' || background ? 'approved' : 'denied');
       $('.approval-actions', card).innerHTML = background
-        ? `<span>Executando em segundo plano…</span><button class="button compact secondary" data-cancel-terminal-job="${escapeHtml(outcome.job.id)}">Cancelar comando</button>`
+        ? `<span>Executando em segundo plano…</span><button class="button compact secondary" data-cancel-background-job="${escapeHtml(outcome.job.id)}">Cancelar</button>`
         : `<span>${outcome.status === 'completed' ? 'Executada com aprovação' : 'Recusada'}</span>`;
       if (outcome.result) {
         const result = document.createElement('pre');
@@ -3254,7 +3301,7 @@ document.addEventListener('click', async (event) => {
       }
       log(`tool · ${outcome.name || 'ação'} ${outcome.status}`);
       if (background) {
-        monitorTerminalJob(outcome.job, { requestId: card.dataset.requestId, sessionId: state.sessionId, approvalCard: card });
+        monitorBackgroundJob(outcome.job, { requestId: card.dataset.requestId, sessionId: state.sessionId, approvalCard: card });
       } else {
         continueAfterTool(outcome);
       }
@@ -3428,6 +3475,19 @@ document.addEventListener('click', async (event) => {
     state.toolsEnabled = !state.toolsEnabled;
     target.classList.toggle('on', state.toolsEnabled);
     localStorage.setItem('jarvis:tools-enabled', String(state.toolsEnabled));
+  }
+  if (action === 'toggle-command-bypass') {
+    state.bypassCommands = !state.bypassCommands;
+    localStorage.setItem('jarvis:bypass-commands', String(state.bypassCommands));
+    syncBypassUi();
+    if (state.nav === 'settings') renderContentView('settings');
+    toast(
+      state.bypassCommands ? 'Bypass de comandos ativo' : 'Bypass de comandos desativado',
+      state.bypassCommands
+        ? 'O terminal da IA executará sem aprovação. System32 continua bloqueado; timeout, auditoria e cancelamento permanecem ativos.'
+        : 'Comandos do terminal voltarão a pedir aprovação.',
+      state.bypassCommands ? 'error' : '',
+    );
   }
   if (action === 'toggle-continuous-learning') {
     state.continuousLearningEnabled = !state.continuousLearningEnabled;
@@ -4088,6 +4148,7 @@ async function promptQuotaLoginIfNeeded() {
 }
 
 syncProjectLabels();
+syncBypassUi();
 setModel(state.model);
 renderSavedMessages();
 renderSidebar();

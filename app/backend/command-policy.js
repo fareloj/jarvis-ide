@@ -14,6 +14,47 @@ const AUDIT_PATH = path.resolve(
 const DEFAULT_TIMEOUT_MS = 60_000;
 const MAX_OUTPUT_BYTES = 1_000_000;
 const MAX_COMMAND_LENGTH = 8_000;
+const SYSTEM32_ROOT = path.resolve(process.env.SystemRoot || process.env.windir || 'C:\\Windows', 'System32');
+const SYSNATIVE_ROOT = path.resolve(process.env.SystemRoot || process.env.windir || 'C:\\Windows', 'Sysnative');
+
+function isInsidePath(candidate, root) {
+  const resolved = path.resolve(String(candidate || ''));
+  const relative = path.relative(path.resolve(root), resolved);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+// O bypass remove a aprovacao humana, nao a fronteira expressamente escolhida
+// pelo usuario. PowerShell permite montar caminhos de varias formas, entao
+// expandimos as referencias usuais ao Windows antes da verificacao lexical.
+// Isso nao pretende ser um sandbox do sistema operacional; a auditoria, o
+// ambiente saneado, o timeout e o encerramento da arvore continuam ativos.
+function assertBypassCommandAllowed(command, cwd) {
+  const workingDirectory = path.resolve(String(cwd || ''));
+  if (isInsidePath(workingDirectory, SYSTEM32_ROOT) || isInsidePath(workingDirectory, SYSNATIVE_ROOT)) {
+    throw new Error('Modo bypass bloqueado: o diretório de trabalho está dentro do System32.');
+  }
+
+  const windowsRoot = path.resolve(process.env.SystemRoot || process.env.windir || 'C:\\Windows');
+  const expanded = String(command || '')
+    .replace(/%\s*(?:windir|systemroot)\s*%/gi, windowsRoot)
+    .replace(/\$\{?env:(?:windir|systemroot)\}?/gi, windowsRoot)
+    .replace(/\$\{?(?:windir|systemroot)\}?/gi, windowsRoot)
+    .replace(/\//g, '\\');
+  const compact = expanded.replace(/["'`\s+()]/g, '').toLowerCase();
+  const blocked = [SYSTEM32_ROOT, SYSNATIVE_ROOT]
+    .map((item) => item.replace(/\//g, '\\').toLowerCase());
+  if (blocked.some((item) => compact.includes(item))) {
+    throw new Error('Modo bypass bloqueado: o comando referencia o System32.');
+  }
+  if (/\[(?:system\.)?environment\]::systemdirectory|getfolderpath\([^)]*system/i.test(expanded)) {
+    throw new Error('Modo bypass bloqueado: o comando tenta resolver o diretório System32 dinamicamente.');
+  }
+  const escapedWindowsRoot = windowsRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (new RegExp(`join-path\\s+(?:["']?${escapedWindowsRoot}["']?)\\s+(?:["']?system32["']?)`, 'i').test(expanded)) {
+    throw new Error('Modo bypass bloqueado: o comando tenta montar um caminho para o System32.');
+  }
+  return true;
+}
 
 // Classificacao por efeito. A ordem importa: o primeiro padrao que casar
 // define a classe, e a mais perigosa vence porque destrutivo vem antes.
@@ -226,7 +267,7 @@ async function readAudit(limite = 100) {
  * Executa um comando ja' autorizado, com ambiente saneado, limite de saida,
  * timeout e encerramento da arvore de processos.
  */
-async function runCommand(command, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, signal, decisao } = {}) {
+async function runCommand(command, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, signal, decisao, onOutput } = {}) {
   const inicio = Date.now();
   const resultado = await new Promise((resolve) => {
     const filho = spawn(
@@ -249,8 +290,16 @@ async function runCommand(command, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, signal
     const aoAbortar = () => finalizar('cancelado');
     signal?.addEventListener('abort', aoAbortar, { once: true });
 
-    filho.stdout.on('data', (c) => { if (stdout.length < MAX_OUTPUT_BYTES) stdout += c; else finalizar('saida-excedida'); });
-    filho.stderr.on('data', (c) => { if (stderr.length < MAX_OUTPUT_BYTES) stderr += c; else finalizar('saida-excedida'); });
+    filho.stdout.on('data', (c) => {
+      const chunk = c.toString();
+      if (stdout.length < MAX_OUTPUT_BYTES) stdout += chunk; else finalizar('saida-excedida');
+      onOutput?.('stdout', chunk);
+    });
+    filho.stderr.on('data', (c) => {
+      const chunk = c.toString();
+      if (stderr.length < MAX_OUTPUT_BYTES) stderr += chunk; else finalizar('saida-excedida');
+      onOutput?.('stderr', chunk);
+    });
 
     filho.on('error', (erro) => {
       clearTimeout(timer);
@@ -288,6 +337,7 @@ module.exports = {
   DEFAULT_TIMEOUT_MS,
   MAX_OUTPUT_BYTES,
   appendAudit,
+  assertBypassCommandAllowed,
   classify,
   decide,
   delegateEnv,

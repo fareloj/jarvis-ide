@@ -492,6 +492,20 @@ function registerIpc() {
     if (!response.ok) throw new Error(data.error || 'Falha ao cancelar o comando em segundo plano.');
     return data;
   });
+  ipcMain.handle('tools:background-job', async (_event, payload) => {
+    const id = encodeURIComponent(String(payload?.id || ''));
+    const response = await backendFetch(`/api/tools/background-jobs/${id}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao consultar o job em segundo plano.');
+    return data;
+  });
+  ipcMain.handle('tools:cancel-background-job', async (_event, payload) => {
+    const id = encodeURIComponent(String(payload?.id || ''));
+    const response = await backendFetch(`/api/tools/background-jobs/${id}`, { method: 'POST' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao cancelar o job em segundo plano.');
+    return data;
+  });
   ipcMain.handle('search:query', async (event, payload) => {
     const ownerId = String(event.sender.id);
     activeSearchRequests.get(ownerId)?.abort();

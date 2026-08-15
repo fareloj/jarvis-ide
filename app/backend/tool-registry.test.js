@@ -4,8 +4,8 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const {
-  delegateCodingTask, getTerminalJob, listProjectDirectory, previewProjectFile, publicDefinitions, requestTool, resolveApproval,
-  resolveProjectTarget, runCli, saveProjectFile, statProjectFile,
+  delegateCodingTask, getBackgroundJob, getTerminalJob, listProjectDirectory, previewProjectFile, publicDefinitions, requestTool, resolveApproval,
+  resolveProjectTarget, runCli, saveProjectFile, startBackgroundJob, statProjectFile,
 } = require('./tool-registry');
 
 const ehWindows = process.platform === 'win32';
@@ -143,6 +143,58 @@ test('job de terminal publica timeout e a saída parcial', { skip: !ehWindows },
   assert.equal(job.result.status, 'timeout');
   assert.match(job.result.stdout, /antes-timeout/);
   assert.notEqual(job.result.exitCode, 0);
+  await fs.rm(root, { recursive: true, force: true });
+});
+
+test('job genérico de delegação publica output incremental e resultado', async () => {
+  const job = startBackgroundJob({
+    name: 'delegate_coding_task',
+    args: { agent: 'antigravity', prompt: 'teste' },
+    context: {},
+  }, async (_name, _args, context) => {
+    context.onOutput('stdout', 'passo 1\n');
+    await new Promise((resolve) => { setTimeout(resolve, 30); });
+    context.onOutput('stderr', 'aviso\n');
+    return { agent: 'antigravity', result: 'tarefa concluída' };
+  });
+  assert.equal(job.status, 'running');
+  assert.equal(job.name, 'delegate_coding_task');
+
+  let completed = job;
+  const deadline = Date.now() + 2_000;
+  while (completed.status === 'running' && Date.now() < deadline) {
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+    completed = getBackgroundJob(job.id);
+  }
+  assert.equal(completed.status, 'completed');
+  assert.match(completed.output.stdout, /passo 1/);
+  assert.match(completed.output.stderr, /aviso/);
+  assert.equal(completed.result.result, 'tarefa concluída');
+});
+
+test('modo bypass inicia terminal sem criar aprovação', { skip: !ehWindows }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-terminal-bypass-'));
+  const outcome = await requestTool('terminal_run', {
+    command: "Write-Output 'bypass-ok'",
+    timeout_seconds: 10,
+  }, { projectPath: root, bypassCommands: true, runId: 'runtime-bypass' });
+  assert.equal(outcome.status, 'background');
+
+  let job = outcome.job;
+  const deadline = Date.now() + 5_000;
+  while (job.status === 'running' && Date.now() < deadline) {
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
+    job = getBackgroundJob(job.id);
+  }
+  assert.equal(job.status, 'completed');
+  assert.match(job.result.stdout, /bypass-ok/);
+
+  await assert.rejects(
+    requestTool('terminal_run', {
+      command: 'Get-Content "$env:windir\\System32\\drivers\\etc\\hosts"',
+    }, { projectPath: root, bypassCommands: true }),
+    /System32/i,
+  );
   await fs.rm(root, { recursive: true, force: true });
 });
 

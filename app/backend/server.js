@@ -195,6 +195,7 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
   let doneSent = false;
   let runFailed = false;
   let awaitingApproval = false;
+  let awaitingBackground = false;
   let finalAssistantContent = '';
   const runMetrics = { toolCalls: 0, toolResults: 0, toolFailures: 0, turnsUsed: 0 };
   const emit = (type, payload) => {
@@ -290,12 +291,20 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
         corpus: options.corpus,
         signal: runSignal,
         runId,
+        bypassCommands: options.bypassCommands === true,
       });
 
       if (outcome.status === 'approval_required') {
         approvalRequired = true;
         awaitingApproval = true;
         emit(EVENT_TYPES.APPROVAL_REQUIRED, outcome.approval);
+        continue;
+      }
+
+      if (outcome.status === 'background') {
+        approvalRequired = true;
+        awaitingBackground = true;
+        emit(EVENT_TYPES.BACKGROUND_STARTED, { name, job: outcome.job });
         continue;
       }
 
@@ -319,8 +328,9 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
       doneSent = true;
       emit(EVENT_TYPES.MESSAGE_DONE, {
         model: model || DEFAULT_MODEL,
-        awaitingApproval: true,
-        evidence: { ...runMetrics, awaitingApproval: true },
+        awaitingApproval: !awaitingBackground,
+        awaitingBackground,
+        evidence: { ...runMetrics, awaitingApproval: !awaitingBackground, awaitingBackground },
       });
     }
   }
@@ -333,6 +343,8 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
     finalStatus = 'failed';
   } else if (awaitingApproval) {
     finalStatus = 'awaiting_approval';
+  } else if (awaitingBackground) {
+    finalStatus = 'background_running';
   } else {
     finalStatus = 'completed';
   }
@@ -539,6 +551,18 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
       if (terminalJobMatch && request.method === 'GET') {
         const job = tools.getTerminalJob(decodeURIComponent(terminalJobMatch[1]));
         sendJson(response, job ? 200 : 404, job || { error: 'Job de terminal não encontrado ou expirado.' });
+        return;
+      }
+
+      const backgroundJobMatch = /^\/api\/tools\/background-jobs\/([^/]+)$/.exec(request.url || '');
+      if (backgroundJobMatch && request.method === 'GET') {
+        const job = tools.getBackgroundJob(decodeURIComponent(backgroundJobMatch[1]));
+        sendJson(response, job ? 200 : 404, job || { error: 'Job em segundo plano não encontrado ou expirado.' });
+        return;
+      }
+      if (backgroundJobMatch && request.method === 'POST') {
+        const cancelled = await tools.cancelBackgroundJob(decodeURIComponent(backgroundJobMatch[1]));
+        sendJson(response, cancelled ? 200 : 404, { cancelled });
         return;
       }
       if (terminalJobMatch && request.method === 'POST') {
@@ -774,6 +798,7 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
           projectPath: body.projectPath,
           corpus: body.corpus,
           toolsEnabled: body.toolsEnabled,
+          bypassCommands: body.bypassCommands === true,
           memoryContextIncluded: body.memoryContextIncluded,
           sessionId: body.sessionId,
           sessionTitle: body.sessionTitle,

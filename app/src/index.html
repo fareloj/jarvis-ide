@@ -175,6 +175,7 @@
                   <div>
                     <button type="button" class="composer-icon" data-nav="rag" title="Abrir conhecimento do projeto"><i class="ph-duotone ph-database"></i></button>
                     <button type="button" class="composer-icon" id="attachButton" title="Anexar arquivos ou fotos"><i class="ph-duotone ph-paperclip"></i></button>
+                    <button type="button" class="composer-icon bypass-button" id="bypassButton" data-action="toggle-command-bypass" title="Ativar bypass de comandos"><i class="ph-duotone ph-shield-slash"></i><span>Bypass</span></button>
                   </div>
                   <div class="composer-actions">
                     <span class="composer-hint"><kbd>Enter</kbd> enviar · <kbd>Shift</kbd>+<kbd>Enter</kbd> nova linha</span>
@@ -251,7 +252,7 @@
               <ul class="capability-list">
                 <li class="available"><i class="ph-duotone ph-check-circle"></i><span>Conversação<small>Ollama local ou Cloud</small></span></li>
                 <li class="available"><i class="ph-duotone ph-check-circle"></i><span>Arquivos<small>Leitura confinada ao projeto</small></span></li>
-                <li class="available"><i class="ph-duotone ph-shield-check"></i><span>Terminal<small>Sempre exige aprovação</small></span></li>
+                <li class="available" id="terminalCapability"><i class="ph-duotone ph-shield-check"></i><span>Terminal<small id="terminalPolicyLabel">Exige aprovação</small></span></li>
                 <li class="available"><i class="ph-duotone ph-check-circle"></i><span>RAG, memória e skills<small>Ativos por projeto</small></span></li>
               </ul>
             </section>

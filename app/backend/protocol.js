@@ -4,6 +4,7 @@ const EVENT_TYPES = Object.freeze({
   TOOL_REQUESTED: 'tool.requested',
   TOOL_RESULT: 'tool.result',
   APPROVAL_REQUIRED: 'approval.required',
+  BACKGROUND_STARTED: 'background.started',
   RUN_FAILED: 'run.failed',
   RUN_CANCELLED: 'run.cancelled',
 });
