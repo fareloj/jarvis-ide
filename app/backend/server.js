@@ -521,14 +521,29 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
           if (outcome.status === 'completed') {
             await defaultCheckpointStore.recordExecutedTool(runtime.runId, outcome.name, runtime.args, outcome.result);
           }
-          const status = outcome.status === 'completed' ? 'completed' : 'denied';
+          const status = outcome.status === 'completed' ? 'completed'
+            : outcome.status === 'background' ? 'background_running' : 'denied';
           await defaultCheckpointStore.saveCheckpoint(runtime.runId, {
-            status: outcome.status === 'completed' ? 'completed_after_approval' : 'approval_denied',
+            status: outcome.status === 'completed' ? 'completed_after_approval'
+              : outcome.status === 'background' ? 'background_running' : 'approval_denied',
             approvalResolvedAt: new Date().toISOString(),
+            ...(outcome.job?.id ? { backgroundJobId: outcome.job.id } : {}),
           });
           defaultJobQueue.completeJob(runtime.runId, status);
         }
         sendJson(response, 200, outcome);
+        return;
+      }
+
+      const terminalJobMatch = /^\/api\/tools\/terminal-jobs\/([^/]+)$/.exec(request.url || '');
+      if (terminalJobMatch && request.method === 'GET') {
+        const job = tools.getTerminalJob(decodeURIComponent(terminalJobMatch[1]));
+        sendJson(response, job ? 200 : 404, job || { error: 'Job de terminal não encontrado ou expirado.' });
+        return;
+      }
+      if (terminalJobMatch && request.method === 'POST') {
+        const cancelled = await tools.cancelTerminalJob(decodeURIComponent(terminalJobMatch[1]));
+        sendJson(response, cancelled ? 200 : 404, { cancelled });
         return;
       }
 

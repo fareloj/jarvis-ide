@@ -148,8 +148,15 @@ const DEFINITIONS = Object.freeze([
     type: 'function',
     function: {
       name: 'terminal_run',
-      description: 'Executa um comando PowerShell no projeto aberto.',
-      parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] },
+      description: 'Executa um comando PowerShell no projeto aberto como job em segundo plano. O resultado final inclui stdout, stderr, código de saída, duração e informa se houve timeout.',
+      parameters: {
+        type: 'object',
+        properties: {
+          command: { type: 'string' },
+          timeout_seconds: { type: 'integer', minimum: 1, maximum: 900, description: 'Timeout entre 1 e 900 segundos. O padrão é 60 segundos.' },
+        },
+        required: ['command'],
+      },
     },
     policy: { risk: 'execute', approval: 'always' },
   },
@@ -479,6 +486,7 @@ async function runTool(name, args = {}, context = {}) {
       cwd: path.resolve(projectPath),
       signal: context.signal,
       decisao,
+      timeoutMs: Math.max(1_000, Math.min(900_000, (Number(args.timeout_seconds) || 60) * 1_000)),
     });
   }
   if (name === 'delegate_coding_task') {
@@ -491,6 +499,67 @@ async function runTool(name, args = {}, context = {}) {
     throw new Error('Escrita exige aprovação explícita do usuário.');
   }
   throw new Error(`Tool desconhecida: ${name}`);
+}
+
+// Aprovar um terminal não deve manter a requisição IPC presa até o processo
+// acabar. O renderer acompanha este job e só devolve o resultado ao modelo
+// quando há um estado final, inclusive timeout e falha com saída parcial.
+const terminalJobs = new Map();
+
+function publicTerminalJob(job) {
+  if (!job) return null;
+  return {
+    id: job.id,
+    status: job.status,
+    createdAt: job.createdAt,
+    completedAt: job.completedAt || null,
+    result: job.result || null,
+    error: job.error || null,
+  };
+}
+
+function startTerminalJob(pending) {
+  const id = `terminal-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const controller = new AbortController();
+  const job = {
+    id,
+    status: 'running',
+    createdAt: new Date().toISOString(),
+    completedAt: null,
+    result: null,
+    error: null,
+    controller,
+  };
+  terminalJobs.set(id, job);
+
+  runTool('terminal_run', pending.args, { ...pending.context, signal: controller.signal })
+    .then((result) => {
+      job.result = result;
+      job.status = result.status === 'timeout' ? 'timeout'
+        : result.status === 'cancelado' ? 'cancelled'
+          : result.exitCode === 0 ? 'completed' : 'failed';
+    })
+    .catch((error) => {
+      job.status = error?.name === 'AbortError' ? 'cancelled' : 'failed';
+      job.error = error?.message || 'Falha inesperada ao executar o comando.';
+    })
+    .finally(() => {
+      job.completedAt = new Date().toISOString();
+      setTimeout(() => terminalJobs.delete(id), 30 * 60_000).unref?.();
+    });
+
+  return publicTerminalJob(job);
+}
+
+function getTerminalJob(id) {
+  return publicTerminalJob(terminalJobs.get(String(id || '')));
+}
+
+async function cancelTerminalJob(id) {
+  const job = terminalJobs.get(String(id || ''));
+  if (!job || job.status !== 'running') return false;
+  job.controller.abort();
+  return true;
 }
 
 // Calcula o efeito da escrita antes de pedir aprovacao. O plano fica
@@ -537,6 +606,10 @@ async function resolveApproval(id, approved) {
     : null;
   if (!approved) return { status: 'denied', name: pending.name, _runtime: runtime };
 
+  if (pending.name === 'terminal_run') {
+    return { status: 'background', name: pending.name, job: startTerminalJob(pending), _runtime: runtime };
+  }
+
   if (pending.plano) {
     // Transacional: se um arquivo do patch falhar, os anteriores voltam ao
     // estado original em vez de deixar meia mudanca aplicada.
@@ -548,6 +621,8 @@ async function resolveApproval(id, approved) {
 
 module.exports = {
   commandPolicy,
+  cancelTerminalJob,
+  getTerminalJob,
   delegateCodingTask,
   fileWrite, describeTools,
   runCli, listProjectDirectory, previewProjectFile, publicDefinitions,

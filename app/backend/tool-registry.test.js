@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const {
-  delegateCodingTask, listProjectDirectory, previewProjectFile, publicDefinitions, requestTool, resolveApproval,
+  delegateCodingTask, getTerminalJob, listProjectDirectory, previewProjectFile, publicDefinitions, requestTool, resolveApproval,
   resolveProjectTarget, runCli, saveProjectFile, statProjectFile,
 } = require('./tool-registry');
 
@@ -96,6 +96,53 @@ test('terminal_run sempre para na aprovação, mesmo em leitura pura', async () 
     const denied = await resolveApproval(pending.approval.id, false);
     assert.equal(denied.status, 'denied');
   }
+  await fs.rm(root, { recursive: true, force: true });
+});
+
+test('terminal aprovado vira job em segundo plano e preserva o output final', { skip: !ehWindows }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-terminal-job-'));
+  const pending = await requestTool('terminal_run', {
+    command: "Start-Sleep -Milliseconds 350; Write-Output 'resultado-background'",
+    timeout_seconds: 10,
+  }, { projectPath: root, runId: 'runtime-terminal-background' });
+
+  const startedAt = Date.now();
+  const approved = await resolveApproval(pending.approval.id, true);
+  assert.equal(approved.status, 'background');
+  assert.equal(approved.job.status, 'running');
+  assert.ok(Date.now() - startedAt < 300, 'aprovar não deve aguardar o comando terminar');
+
+  let job = approved.job;
+  const deadline = Date.now() + 5_000;
+  while (job.status === 'running' && Date.now() < deadline) {
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
+    job = getTerminalJob(job.id);
+  }
+  assert.equal(job.status, 'completed');
+  assert.match(job.result.stdout, /resultado-background/);
+  assert.equal(job.result.exitCode, 0);
+  assert.ok(job.result.duracaoMs >= 300);
+  await fs.rm(root, { recursive: true, force: true });
+});
+
+test('job de terminal publica timeout e a saída parcial', { skip: !ehWindows }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-terminal-timeout-job-'));
+  const pending = await requestTool('terminal_run', {
+    command: "Write-Output 'antes-timeout'; Start-Sleep -Seconds 20",
+    timeout_seconds: 1,
+  }, { projectPath: root });
+  const approved = await resolveApproval(pending.approval.id, true);
+
+  let job = approved.job;
+  const deadline = Date.now() + 8_000;
+  while (job.status === 'running' && Date.now() < deadline) {
+    await new Promise((resolve) => { setTimeout(resolve, 75); });
+    job = getTerminalJob(job.id);
+  }
+  assert.equal(job.status, 'timeout');
+  assert.equal(job.result.status, 'timeout');
+  assert.match(job.result.stdout, /antes-timeout/);
+  assert.notEqual(job.result.exitCode, 0);
   await fs.rm(root, { recursive: true, force: true });
 });
 

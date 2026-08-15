@@ -67,6 +67,8 @@ contextBridge.exposeInMainWorld('jarvis', {
   tools: {
     list: () => ipcRenderer.invoke('tools:list'),
     approve: (payload) => ipcRenderer.invoke('tools:approve', payload),
+    terminalJob: (payload) => ipcRenderer.invoke('tools:terminal-job', payload),
+    cancelTerminalJob: (payload) => ipcRenderer.invoke('tools:cancel-terminal-job', payload),
   },
   quota: {
     get: () => ipcRenderer.invoke('quota:get'),

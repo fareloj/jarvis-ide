@@ -8,6 +8,7 @@ const path = require('node:path');
 const memoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-auth-'));
 process.env.JARVIS_MEMORY_PATH = memoryRoot;
 const { startBackend } = require('./server');
+const { requestTool } = require('./tool-registry');
 
 function request(url, { method = 'GET', headers = {}, body } = {}) {
   return new Promise((resolve, reject) => {
@@ -119,6 +120,36 @@ test('métodos e origens inesperadas são recusados antes da rota', async (conte
     headers: { ...autorizado, Origin: 'https://exemplo.invalido' },
   });
   assert.equal(origem.status, 403);
+});
+
+test('API acompanha um terminal aprovado até entregar o output final', { skip: process.platform !== 'win32' }, async (context) => {
+  const backend = await startBackend();
+  context.after(() => backend.server.close());
+  const headers = { Authorization: `Bearer ${backend.authToken}` };
+  const pending = await requestTool('terminal_run', {
+    command: "Write-Output 'output-via-api'",
+    timeout_seconds: 10,
+  }, { projectPath: memoryRoot, runId: 'api-terminal-background' });
+
+  const approval = await request(`${backend.url}/api/tools/approval`, {
+    method: 'POST',
+    headers,
+    body: { id: pending.approval.id, approved: true },
+  });
+  assert.equal(approval.status, 200);
+  const approved = JSON.parse(approval.body);
+  assert.equal(approved.status, 'background');
+
+  let job = approved.job;
+  const deadline = Date.now() + 5_000;
+  while (job.status === 'running' && Date.now() < deadline) {
+    await new Promise((resolve) => { setTimeout(resolve, 75); });
+    const response = await request(`${backend.url}/api/tools/terminal-jobs/${encodeURIComponent(job.id)}`, { headers });
+    assert.equal(response.status, 200);
+    job = JSON.parse(response.body);
+  }
+  assert.equal(job.status, 'completed');
+  assert.match(job.result.stdout, /output-via-api/);
 });
 
 test.after(() => fs.rmSync(memoryRoot, { recursive: true, force: true }));
