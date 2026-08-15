@@ -9,7 +9,6 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.net.URI
 
 data class JarvisUiState(
     val configured: Boolean = false,
@@ -23,6 +22,7 @@ data class JarvisUiState(
     val generating: Boolean = false,
     val researchEnabled: Boolean = true,
     val editingMessageId: String? = null,
+    val lanMode: Boolean = false,
     val error: String? = null,
 )
 
@@ -35,7 +35,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     init {
         store.loadConfig()?.let { config ->
             api = JarvisApi(config)
-            state = state.copy(configured = true, connecting = true)
+            state = state.copy(configured = true, connecting = true, lanMode = config.serverUrl.startsWith("http://"))
             connectAndLoad()
         }
     }
@@ -45,18 +45,18 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun connect(serverUrl: String, token: String) {
         val normalized = serverUrl.trim().trimEnd('/')
-        val uri = runCatching { URI(normalized) }.getOrNull()
-        if (uri?.scheme != "https" || uri.host.isNullOrBlank() || uri.host in setOf("localhost", "127.0.0.1")) {
-            state = state.copy(error = "Use a URL HTTPS do Tailscale, nunca localhost ou IP público sem TLS.")
+        val endpoint = validateServerEndpoint(normalized, BuildConfig.ALLOW_LAN_HTTP)
+        if (endpoint.error != null) {
+            state = state.copy(error = endpoint.error)
             return
         }
         if (token.trim().length < 32) {
             state = state.copy(error = "O token deve ter pelo menos 32 caracteres.")
             return
         }
-        val config = ConnectionConfig(normalized, token.trim())
+        val config = ConnectionConfig(endpoint.normalizedUrl!!, token.trim())
         api = JarvisApi(config)
-        state = state.copy(configured = true, connecting = true, error = null)
+        state = state.copy(configured = true, connecting = true, lanMode = endpoint.isLan, error = null)
         viewModelScope.launch {
             runCatching { api!!.health() }.onSuccess { healthy ->
                 if (!healthy) throw IllegalStateException("Gateway não confirmou saúde.")

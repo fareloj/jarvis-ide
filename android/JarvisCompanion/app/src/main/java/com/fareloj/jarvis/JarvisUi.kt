@@ -82,7 +82,8 @@ private fun LoginScreen(state: JarvisUiState, connect: (String, String) -> Unit)
         Spacer(Modifier.height(38.dp))
         Text("CONECTAR AO PC", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = Muted)
         Spacer(Modifier.height(12.dp))
-        OutlinedTextField(server, { server = it }, Modifier.fillMaxWidth(), label = { Text("URL HTTPS do Tailscale") }, singleLine = true)
+        OutlinedTextField(server, { server = it }, Modifier.fillMaxWidth(), label = { Text("Endereço do JARVIS") }, singleLine = true)
+        Text("HTTPS remoto ou IP privado local, como http://192.168.15.91:49200", style = MaterialTheme.typography.bodySmall, color = Muted)
         Spacer(Modifier.height(10.dp))
         OutlinedTextField(token, { token = it }, Modifier.fillMaxWidth(), label = { Text("Token do JARVIS") }, singleLine = true)
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 10.dp)) }
@@ -100,7 +101,7 @@ private fun OfflineScreen(error: String?, retry: () -> Unit, logout: () -> Unit)
     Column(Modifier.fillMaxSize().padding(28.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         Text("PC indisponível", fontFamily = FontFamily.Serif, fontSize = 30.sp)
         Spacer(Modifier.height(10.dp))
-        Text(error ?: "Confira se o JARVIS e o Tailscale estão ativos.", color = Muted)
+        Text(error ?: "Confira se o PC, o JARVIS e a conexão de rede estão ativos.", color = Muted)
         Spacer(Modifier.height(20.dp))
         Button(onClick = retry) { Text("Tentar novamente") }
         TextButton(onClick = logout) { Text("Trocar conexão") }
@@ -179,7 +180,7 @@ private fun ChatShell(viewModel: JarvisViewModel) {
     }
     if (showModels) ModelDialog(state, viewModel::selectModel) { showModels = false }
     if (showQuota) QuotaDialog(state.quota) { showQuota = false }
-    if (showSettings) SettingsDialog(viewModel::logout) { showSettings = false }
+    if (showSettings) SettingsDialog(state.lanMode, viewModel::logout) { showSettings = false }
 }
 
 private fun quotaLabel(quota: QuotaInfo): String = quota.sessionPercent?.let { "☁ ${it.toInt()}%" } ?: "☁ —"
@@ -314,11 +315,11 @@ private fun QuotaBar(label: String, value: Double?) {
 }
 
 @Composable
-private fun SettingsDialog(logout: () -> Unit, dismiss: () -> Unit) {
+private fun SettingsDialog(lanMode: Boolean, logout: () -> Unit, dismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = dismiss,
         title = { Text("Configuração") },
-        text = { Text("A conexão usa HTTPS privado e token armazenado no Android Keystore. Para trocar o PC ou revogar este aparelho, remova a conexão.") },
+        text = { Text(if (lanMode) "Modo LAN ativo: funciona somente na mesma rede e o tráfego HTTP não é criptografado. O token permanece no Android Keystore." else "A conexão usa HTTPS e token armazenado no Android Keystore. Para trocar o PC ou revogar este aparelho, remova a conexão.") },
         confirmButton = { TextButton(onClick = { dismiss(); logout() }) { Text("Remover conexão", color = MaterialTheme.colorScheme.error) } },
         dismissButton = { TextButton(onClick = dismiss) { Text("Cancelar") } },
     )

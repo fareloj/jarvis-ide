@@ -125,3 +125,13 @@ O projeto usa API 37, AGP 9.3, Gradle 9.7 e Kotlin/Compose 2.3.21. O `minSdk` é
 | `POST` | `/v1/chat/stream` | chat NDJSON com memória, RAG e pesquisa |
 
 Todas as rotas exigem `Authorization: Bearer <JARVIS_MOBILE_TOKEN>`.
+
+## Teste somente na rede local
+
+O APK de depuração também aceita uma URL HTTP com IPv4 privado literal e porta, por exemplo `http://192.168.15.91:49200`. A build de produção continua bloqueando HTTP. Configure no `.env`:
+
+```dotenv
+JARVIS_MOBILE_HOST=192.168.15.91
+```
+
+O gateway recusa `0.0.0.0` e endereços públicos. O celular e o PC precisam estar no mesmo segmento de rede, e o Firewall do Windows deve permitir TCP `49200` apenas no perfil privado. Como HTTP local não possui criptografia, use esse modo somente em uma rede doméstica confiável; para acesso remoto, use HTTPS.

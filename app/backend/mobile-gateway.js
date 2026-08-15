@@ -28,6 +28,21 @@ function tokenMatches(provided, expected) {
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
+function isPrivateIpv4(host) {
+  const parts = String(host).split('.');
+  if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part) || (part.length > 1 && part.startsWith('0')))) return false;
+  const octets = parts.map(Number);
+  if (octets.some((part) => part < 0 || part > 255)) return false;
+  return octets[0] === 10
+    || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
+    || (octets[0] === 192 && octets[1] === 168);
+}
+
+function validateBindHost(host) {
+  if (host === '127.0.0.1' || isPrivateIpv4(host)) return host;
+  throw new Error('JARVIS_MOBILE_HOST deve ser 127.0.0.1 ou um IPv4 privado específico; 0.0.0.0 e IP público são recusados.');
+}
+
 function sendJson(response, status, payload) {
   response.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -117,6 +132,7 @@ function startMobileGateway({
   const secret = String(mobileToken || '').trim();
   if (!backendUrl || !backendToken) throw new Error('Backend interno é obrigatório para o gateway móvel.');
   if (secret.length < 32) throw new Error('JARVIS_MOBILE_TOKEN deve ter pelo menos 32 caracteres aleatórios.');
+  validateBindHost(host);
 
   const server = http.createServer(async (request, response) => {
     try {
@@ -190,4 +206,4 @@ function startMobileGateway({
   });
 }
 
-module.exports = { normalizeMessages, startMobileGateway, tokenMatches };
+module.exports = { isPrivateIpv4, normalizeMessages, startMobileGateway, tokenMatches, validateBindHost };
