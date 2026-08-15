@@ -130,10 +130,13 @@ const elements = {
   attachmentsStrip: $('#attachmentsStrip'),
   connection: $('#connectionStatus'),
   welcomeBackend: $('#welcomeBackend'),
+  welcomeModel: $('#welcomeModel'),
   messageCount: $('#messageCount'),
   modelLabel: $('#activeModelLabel'),
   inspectorModel: $('#inspectorModel'),
   projectName: $('#projectName'),
+  terminalProjectName: $('#terminalProjectName'),
+  terminalBranchName: $('#terminalBranchName'),
   recentProjects: $('#recentProjects'),
   toastRegion: $('#toastRegion'),
   quotaButton: $('#quotaButton'),
@@ -185,8 +188,8 @@ const sidebarTemplates = {
     </div>
     <div class="sidebar-section">
       <p class="eyebrow" style="margin:4px 8px 8px">Sessão</p>
-      <div class="sidebar-link"><i class="ph-duotone ph-brain"></i>${shortModel(state.model)}</div>
-      <div class="sidebar-link"><i class="ph-duotone ph-shield-check"></i>Tools com aprovação</div>
+      <div class="sidebar-label"><i class="ph-duotone ph-brain"></i>${shortModel(state.model)}</div>
+      <div class="sidebar-label"><i class="ph-duotone ph-shield-check"></i>Tools com aprovação</div>
     </div>`;
   },
   files: () => `
@@ -222,21 +225,21 @@ const sidebarTemplates = {
     </div>`,
   git: () => `
     <div class="sidebar-section">
-      <div class="sidebar-link active"><i class="ph-duotone ph-git-diff"></i>Alterações do projeto</div>
-      <div class="sidebar-link"><i class="ph-duotone ph-shield-check"></i>Stage e commit manuais</div>
+      <div class="sidebar-label active"><i class="ph-duotone ph-git-diff"></i>Alterações do projeto</div>
+      <div class="sidebar-label"><i class="ph-duotone ph-shield-check"></i>Stage e commit manuais</div>
     </div>`,
   rag: () => `
     <div class="sidebar-section">
-      <div class="sidebar-link active"><i class="ph-duotone ph-database"></i>Corpus do projeto</div>
-      <div class="sidebar-link"><i class="ph-duotone ph-brain"></i>Memória persistente</div>
+      <div class="sidebar-label active"><i class="ph-duotone ph-database"></i>Corpus do projeto</div>
+      <div class="sidebar-label"><i class="ph-duotone ph-brain"></i>Memória persistente</div>
     </div>`,
   history: () => `
     <div class="sidebar-section">
-      <div class="sidebar-link active"><i class="ph-duotone ph-clock-counter-clockwise"></i>Todas as conversas</div>
+      <div class="sidebar-label active"><i class="ph-duotone ph-clock-counter-clockwise"></i>Todas as conversas</div>
     </div>`,
   settings: () => `
     <div class="sidebar-section">
-      <div class="sidebar-link active"><i class="ph-duotone ph-sliders-horizontal"></i>Preferências</div>
+      <div class="sidebar-label active"><i class="ph-duotone ph-sliders-horizontal"></i>Preferências</div>
     </div>`,
 };
 
@@ -580,8 +583,11 @@ function specialPage(type) {
 
   if (type === 'settings') {
     page.innerHTML = `
-      <h1>Configurações</h1>
-      <p class="page-intro">Preferências do aplicativo, modelos e políticas de execução. As credenciais permanecem isoladas do renderer.</p>
+      <header class="page-header standard-page-header">
+        <p class="eyebrow">JARVIS</p>
+        <h1>Configurações</h1>
+        <p class="page-intro">Preferências do aplicativo, modelos e políticas de execução. As credenciais permanecem isoladas do renderer.</p>
+      </header>
       <div class="settings-grid">
         <section class="settings-group">
           <h2>Modelo</h2>
@@ -639,8 +645,11 @@ function specialPage(type) {
       </div>`;
   } else if (type === 'rag') {
     page.innerHTML = `
-      <h1>Conhecimento do projeto</h1>
-      <p class="page-intro">Indexação híbrida local com embeddings, BM25, RRF e reranking pelo container do Hybrid RAG Engine.</p>
+      <header class="page-header standard-page-header">
+        <p class="eyebrow">Conhecimento</p>
+        <h1>Conhecimento do projeto</h1>
+        <p class="page-intro">Indexação híbrida local com embeddings, BM25, RRF e reranking pelo container do Hybrid RAG Engine.</p>
+      </header>
       <div class="rag-toolbar">
         <div class="rag-health" id="ragHealth"><span class="status-dot checking"></span><span>Verificando o engine…</span></div>
         <button class="button secondary" data-action="rag-refresh"><i class="ph-duotone ph-arrows-clockwise"></i>Verificar</button>
@@ -668,8 +677,11 @@ function specialPage(type) {
   } else {
     const sessions = sessionStore.list({ includeArchived: true });
     page.innerHTML = `
-      <h1>Histórico local</h1>
-      <p class="page-intro">Arquivo de conversas deste dispositivo. Isto não é memória do agente e não entra automaticamente em outros chats.</p>
+      <header class="page-header standard-page-header">
+        <p class="eyebrow">Conversas</p>
+        <h1>Histórico local</h1>
+        <p class="page-intro">Arquivo de conversas deste dispositivo. Isto não é memória do agente e não entra automaticamente em outros chats.</p>
+      </header>
       <div class="history-list">
         ${sessions.length ? sessions.map((session) => `
           <div class="history-row">
@@ -1532,13 +1544,20 @@ function switchView(view) {
   $$('[data-content-view]').forEach((section) => section.classList.toggle('hidden', section.dataset.contentView !== view));
 }
 
-function setModel(model) {
+function syncProjectLabels() {
+  elements.projectName.textContent = state.project?.name || 'Nenhum projeto';
+  if (elements.terminalProjectName) elements.terminalProjectName.textContent = state.project?.name || 'sem projeto';
+}
+
+function setModel(model, { notify = false } = {}) {
   state.model = model;
   persist();
-  elements.modelLabel.textContent = shortModel(model);
-  elements.inspectorModel.textContent = shortModel(model).replace(' 120B', '').replace(' 480B', '');
+  const label = shortModel(model);
+  elements.modelLabel.textContent = label;
+  if (elements.welcomeModel) elements.welcomeModel.textContent = label;
+  elements.inspectorModel.textContent = label;
   renderSidebar();
-  toast('Modelo atualizado', `${shortModel(model)} será usado nas próximas mensagens.`);
+  if (notify) toast('Modelo atualizado', `${label} será usado nas próximas mensagens.`);
 }
 
 function branchControlsHtml(info) {
@@ -2101,9 +2120,8 @@ function openSession(sessionId) {
   state.projectFiles = [];
   state.selectedFile = null;
   state.ragDocuments = [];
-  elements.projectName.textContent = state.project.name;
-  elements.modelLabel.textContent = shortModel(state.model);
-  elements.inspectorModel.textContent = shortModel(state.model).replace(' 120B', '').replace(' 480B', '');
+  syncProjectLabels();
+  setModel(state.model);
   renderSavedMessages();
   renderSidebar();
   enterWorkspace();
@@ -2401,7 +2419,7 @@ async function openProject() {
   state.explorerLoading = new Set();
   state.openTabs = [];
   state.activeTab = null;
-  elements.projectName.textContent = project.name;
+  syncProjectLabels();
   persist();
   enterWorkspace();
   renderSidebar();
@@ -2672,9 +2690,10 @@ async function carregarGit({ silencioso = true } = {}) {
 // A barra de título mostrava "main" fixo desde o início.
 function atualizarBranchNoTopo() {
   const alvo = $('#projectCrumb .branch');
-  if (!alvo) return;
   const status = gitState.status;
-  alvo.textContent = status?.repositorio ? (status.branch || 'sem branch') : 'sem git';
+  const branch = status?.repositorio ? (status.branch || 'sem branch') : 'sem git';
+  if (alvo) alvo.textContent = branch;
+  if (elements.terminalBranchName) elements.terminalBranchName.textContent = branch;
 }
 
 async function abrirDiff(arquivo) {
@@ -3654,7 +3673,7 @@ async function loadModelCatalog({ silencioso = true } = {}) {
     const payload = await bridge.models.list();
     cloudModels = Array.isArray(payload.models) ? payload.models : [];
     if (payload.error && !silencioso) toast('Modelos indisponíveis', payload.error, 'error');
-    setModel(state.model); // atualiza o rotulo assim que o catalogo chega
+    setModel(state.model); // atualiza o rótulo assim que o catálogo chega
     renderModelList();
   } catch (error) {
     if (!silencioso) toast('Falha ao listar modelos', error.message, 'error');
@@ -3705,7 +3724,7 @@ document.addEventListener('click', (event) => {
 
   const escolhido = event.target.closest('[data-model-id]');
   if (escolhido) {
-    setModel(escolhido.dataset.modelId);
+    setModel(escolhido.dataset.modelId, { notify: true });
     closeModelDialog();
   }
 });
@@ -3982,7 +4001,7 @@ async function promptQuotaLoginIfNeeded() {
   }
 }
 
-elements.projectName.textContent = state.project.name;
+syncProjectLabels();
 setModel(state.model);
 renderSavedMessages();
 renderSidebar();

@@ -31,11 +31,11 @@
           <button class="traffic-button close" data-window-action="close" aria-label="Fechar">
             <i class="ph-duotone ph-x"></i>
           </button>
-          <button class="traffic-button minimize" data-window-action="minimize" aria-label="Minimizar">
-            <i class="ph-duotone ph-minus"></i>
-          </button>
           <button class="traffic-button maximize" data-window-action="maximize" aria-label="Maximizar ou restaurar">
             <i class="ph-duotone ph-arrows-out-simple"></i>
+          </button>
+          <button class="traffic-button minimize" data-window-action="minimize" aria-label="Minimizar">
+            <i class="ph-duotone ph-minus"></i>
           </button>
         </div>
 
@@ -45,7 +45,7 @@
           <i class="ph-duotone ph-folder"></i>
           <span id="projectName">Nenhum projeto</span>
           <span class="slash">/</span>
-          <span class="branch">main</span>
+          <span class="branch">sem git</span>
         </div>
 
         <div class="titlebar-drag-region"></div>
@@ -53,7 +53,7 @@
         <div class="titlebar-actions no-drag">
           <button class="top-pill" id="modelPicker" title="Modelo ativo">
             <i class="ph-duotone ph-brain"></i>
-            <span id="activeModelLabel">GPT-OSS 120B</span>
+            <span id="activeModelLabel">Carregando modelo…</span>
             <i class="ph-duotone ph-caret-down subtle"></i>
           </button>
           <button class="top-pill quota-pill" id="quotaButton" title="Monitor de Quota Ollama Cloud">
@@ -63,7 +63,7 @@
           </button>
           <div class="top-pill" title="Perfil do agente">
             <i class="ph-duotone ph-chat-circle-dots"></i>
-            <span>Agente local</span>
+            <span>Agente JARVIS</span>
           </div>
           <button class="connection-pill" id="connectionStatus" title="Estado do backend">
             <span class="status-dot checking"></span>
@@ -102,7 +102,7 @@
           <div>
             <p class="eyebrow">Ambiente</p>
             <dl class="environment-list">
-              <div><dt>Modelo</dt><dd>GPT-OSS 120B</dd></div>
+              <div><dt>Modelo</dt><dd id="welcomeModel">Carregando modelo…</dd></div>
               <div><dt>Modo</dt><dd>Agente + RAG</dd></div>
               <div><dt>Interface</dt><dd>Electron</dd></div>
               <div><dt>Backend</dt><dd id="welcomeBackend">verificando</dd></div>
@@ -159,8 +159,8 @@
                     <p>Olá. Posso conversar, recuperar contexto do projeto, consultar memórias e usar tools com limites de segurança e aprovação.</p>
                     <div class="scope-tags">
                       <span><i class="ph-duotone ph-check-circle"></i>Chat</span>
-                      <span><i class="ph-duotone ph-check-circle"></i>Tools protegidas</span>
-                      <span><i class="ph-duotone ph-check-circle"></i>RAG ativo</span>
+                      <span><i class="ph-duotone ph-check-circle"></i>Tools com aprovação</span>
+                      <span><i class="ph-duotone ph-check-circle"></i>RAG integrado</span>
                     </div>
                   </div>
                 </article>
@@ -226,7 +226,7 @@
               </div>
             </div>
             <div class="terminal-output hidden" id="terminalOutput" data-bottom-view="agent-commands">
-              <p><span class="prompt-project">jarvis</span> <span class="muted">on</span> <span class="prompt-branch">main</span> <span class="prompt-symbol">❯</span> <span class="muted">terminal mediado pelo agente</span></p>
+              <p><span class="prompt-project" id="terminalProjectName">sem projeto</span> <span class="muted">em</span> <span class="prompt-branch" id="terminalBranchName">sem git</span> <span class="prompt-symbol">❯</span> <span class="muted">terminal mediado pelo agente</span></p>
               <p class="terminal-note">Comandos solicitados pela IA só executam depois da sua aprovação.</p>
             </div>
             <div class="bottom-copy hidden" data-bottom-view="logs" id="logOutput">Aguardando eventos do aplicativo…</div>
@@ -281,7 +281,7 @@
               <p class="eyebrow">Conversa</p>
               <dl class="compact-stats">
                 <div><dt>Mensagens</dt><dd id="messageCount">1</dd></div>
-                <div><dt>Modelo</dt><dd id="inspectorModel">GPT-OSS</dd></div>
+                <div><dt>Modelo</dt><dd id="inspectorModel">—</dd></div>
                 <div><dt>Persistência</dt><dd>local</dd></div>
               </dl>
             </section>
@@ -295,7 +295,7 @@
           <div class="quota-header-title">
             <span class="quota-header-icon"><i class="ph-duotone ph-cloud"></i></span>
             <div class="quota-header-text">
-              <strong>Cloud usage</strong>
+              <strong>Uso do Ollama Cloud</strong>
               <div class="quota-header-meta">
                 <span class="badge" id="quotaPlanBadge">Free</span>
                 <span class="quota-synced-at" id="quotaSyncedAt">Nunca sincronizado</span>
