@@ -2,8 +2,6 @@
 
 # JARVIS
 
-O cliente móvel está documentado em [docs/ANDROID_COMPANION.md](docs/ANDROID_COMPANION.md).
-
 **An agentic development environment that runs on your machine.**
 
 Local models through Ollama · tools that ask before they act · project RAG · memory that survives across conversations.
@@ -12,16 +10,14 @@ Local models through Ollama · tools that ask before they act · project RAG · 
 [![Node](https://img.shields.io/badge/Node.js-20%2B-5FA04E?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Ollama](https://img.shields.io/badge/Ollama-local%20%2B%20cloud-000000?logo=ollama&logoColor=white)](https://ollama.com)
 [![CI](https://github.com/fareloj/jarvis-ide/actions/workflows/ci.yml/badge.svg)](https://github.com/fareloj/jarvis-ide/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-60%20passing-3fb950)](#development)
-[![Status](https://img.shields.io/badge/status-early%20development-orange)]()
+[![Tests](https://img.shields.io/badge/tests-178%20passing-3fb950)](#development)
+[![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)](#android-companion)
+[![Status](https://img.shields.io/badge/status-active%20development-0969DA)](#status)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
 
 ---
-
-<!-- SCREENSHOT: main chat window, with a reply and tool cards below it -->
-<p align="center"><img src="docs/screenshots/chat.png" alt="JARVIS chat view" width="900"></p>
 
 ## What it is
 
@@ -51,6 +47,7 @@ history** — with the agent's reach deliberately fenced in.
 | 🤝 **Delegation** | Hand a heavy task to Claude Code, Codex or Antigravity CLI running headless in your project folder. |
 | 📊 **Ollama Cloud quota** | Session and weekly usage synced from your account, with warnings before you hit the wall. |
 | 🧩 **Skills** | Markdown instruction files (`SKILL.md`) toggled per conversation. Same shape Claude Code uses. |
+| 📱 **Android companion** | Lightweight chat client that keeps Ollama, RAG, memory and search processing on your PC. |
 
 > The interface is in **Brazilian Portuguese**. Everything else — code, config, this document — is in English.
 
@@ -78,6 +75,9 @@ flowchart TB
         Web["Search API<br/>Tavily · Brave · DDG"]
     end
 
+    Mobile["Android companion<br/>chat · models · quota"]
+    Gateway["Restricted mobile gateway<br/>search · RAG · memory only"]
+
     UI <-->|contextBridge| Main
     Main <-->|localhost| Backend
     Backend --> Ollama
@@ -85,6 +85,8 @@ flowchart TB
     Backend --> Web
     Backend --> Mem
     Backend --> Notes
+    Mobile -->|LAN or private HTTPS| Gateway
+    Gateway --> Backend
 ```
 
 ## Requirements
@@ -107,6 +109,20 @@ npm start
 On Windows you can double-click **`iniciar-jarvis.bat`**, which checks Node, installs missing
 dependencies, reports whether the memory service is up, and launches the app.
 
+## Android companion
+
+JARVIS Companion is a lightweight Android client for chat, web research, project RAG, cross-chat
+memory, Ollama Cloud models and quota. The phone only renders the interface and streams messages;
+all model inference and retrieval remain on your PC. The mobile gateway never exposes terminal,
+Git, file-writing, skills or approval tools.
+
+[**Download the latest APK**](https://github.com/fareloj/jarvis-ide/releases/latest) ·
+[Setup and security guide](docs/ANDROID_COMPANION.md)
+
+It can connect through private HTTPS for remote access or directly to a private IPv4 address while
+the phone and PC are on the same trusted LAN. The LAN option exists only in the debug APK and never
+accepts a public IP, `localhost` or a wildcard gateway bind.
+
 ## Configuration
 
 Everything is optional — the defaults assume Ollama on `127.0.0.1:11434`. See
@@ -120,6 +136,9 @@ Everything is optional — the defaults assume Ollama on `127.0.0.1:11434`. See
 | `JARVIS_BRAVE_SEARCH_API_KEY` | Alternative search with its own index. |
 | `JARVIS_EMBED_URL` | Embedding service backing cross-chat memory. |
 | `JARVIS_CONVERSATION_MEMORY` | `0` disables cross-chat memory entirely. |
+| `JARVIS_MOBILE_ENABLED` | `1` starts the restricted Android gateway. |
+| `JARVIS_MOBILE_HOST` | Loopback for a tunnel, or one specific private IPv4 for LAN mode. |
+| `JARVIS_MOBILE_PORT` | Mobile gateway port. Defaults to `49200`. |
 
 Search providers are picked automatically in order of quality: **Tavily → Brave → DuckDuckGo**.
 
@@ -139,9 +158,6 @@ Reads run automatically. Anything that writes, executes or spends money stops an
 | `delegate_coding_task` | execute | **always** |
 
 File tools are confined to the folder you opened — a path escaping it throws before touching disk.
-
-<!-- SCREENSHOT: tool approval card inside the chat -->
-<p align="center"><img src="docs/screenshots/approval.png" alt="Tool approval card" width="700"></p>
 
 ## Two kinds of memory
 
@@ -166,9 +182,6 @@ A few deliberate choices behind it:
 
 Deleting a conversation deletes its memory too, across every project scope it touched. The
 confirmation dialog says so explicitly.
-
-<!-- SCREENSHOT: settings, with the memory toggle -->
-<p align="center"><img src="docs/screenshots/settings.png" alt="Settings" width="800"></p>
 
 ## Skills
 
@@ -205,7 +218,7 @@ Found something? Open an issue.
 
 ```bash
 npm run check   # syntax check across main, preload, backend and renderer
-npm test        # 60 tests, no external services required
+npm test        # 178 tests, no external services required
 npm start       # run the app
 ```
 
@@ -226,12 +239,17 @@ app/
 ├── skills/             # SKILL.md instruction files
 ├── data/               # local memory and notes (gitignored)
 └── iniciar-jarvis.bat  # Windows launcher
+android/
+└── JarvisCompanion/    # native Kotlin + Jetpack Compose client
+docs/
+└── ANDROID_COMPANION.md # mobile setup and security boundary
 ```
 
 ## Status
 
-Early development (`v0.1.0`). It works and gets daily use, but interfaces change without notice and
-there is no packaged release yet.
+Active development. The desktop IDE runs from source, while installable Android builds are published
+on the [Releases page](https://github.com/fareloj/jarvis-ide/releases). Interfaces can still change
+between versions, but releases and migration-relevant changes are documented.
 
 ## License
 
