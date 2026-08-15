@@ -25,3 +25,20 @@ test('fallback sempre informa o estado final da tool', () => {
   assert.match(continuation.fallbackFor({ name: 'memory_save', status: 'completed' }), /sucesso/i);
   assert.match(continuation.fallbackFor({ name: 'memory_save', status: 'denied' }), /recusada/i);
 });
+
+test('job confirmado vivo gera uma atualização de início, não de conclusão', () => {
+  const messages = continuation.buildMessages({
+    baseSystemPrompt: 'base',
+    dateContext: 'data',
+    history: [],
+    outcome: {
+      name: 'delegate_coding_task',
+      status: 'running',
+      result: { jobId: 'delegate-123', processId: 4242, externalId: 'agy-abc', alive: true },
+    },
+  });
+  assert.match(messages[2].content, /NÃO terminou/);
+  assert.match(messages[2].content, /jobId/);
+  assert.match(messages.at(-1).content, /delegate-123/);
+  assert.match(continuation.fallbackFor({ name: 'delegate_coding_task', status: 'running' }), /iniciada/i);
+});

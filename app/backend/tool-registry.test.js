@@ -152,6 +152,8 @@ test('job genérico de delegação publica output incremental e resultado', asyn
     args: { agent: 'antigravity', prompt: 'teste' },
     context: {},
   }, async (_name, _args, context) => {
+    context.onStarted({ pid: 4242, cwd: os.tmpdir() });
+    context.onMetadata({ externalId: 'agy-conversation-1', lastStep: 'agent_response', stepState: 'RUNNING' });
     context.onOutput('stdout', 'passo 1\n');
     await new Promise((resolve) => { setTimeout(resolve, 30); });
     context.onOutput('stderr', 'aviso\n');
@@ -159,6 +161,8 @@ test('job genérico de delegação publica output incremental e resultado', asyn
   });
   assert.equal(job.status, 'running');
   assert.equal(job.name, 'delegate_coding_task');
+  assert.equal(job.processId, 4242);
+  assert.equal(job.externalId, 'agy-conversation-1');
 
   let completed = job;
   const deadline = Date.now() + 2_000;
@@ -170,6 +174,10 @@ test('job genérico de delegação publica output incremental e resultado', asyn
   assert.match(completed.output.stdout, /passo 1/);
   assert.match(completed.output.stderr, /aviso/);
   assert.equal(completed.result.result, 'tarefa concluída');
+
+  const status = await requestTool('background_job_status', { job_id: job.id }, {});
+  assert.equal(status.status, 'completed');
+  assert.equal(status.result.externalId, 'agy-conversation-1');
 });
 
 test('modo bypass inicia terminal sem criar aprovação', { skip: !ehWindows }, async () => {

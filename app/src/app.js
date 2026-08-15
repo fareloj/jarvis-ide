@@ -22,6 +22,8 @@ const BASE_SYSTEM_PROMPT = [
   '',
   'APROVAÇÕES SÃO DO USUÁRIO. Tools de escrita, terminal e delegação exigem aprovação explícita por design. Explique em uma frase o que vai rodar e por quê; nunca tente contornar a aprovação nem pressione por ela.',
   '',
+  'JOBS EM SEGUNDO PLANO. Quando terminal_run ou delegate_coding_task retornar um job em execução, registre o jobId e os identificadores fornecidos. Isso comprova que a execução começou: nunca diga depois que ela não foi executada e nunca crie uma segunda delegação para conferir progresso. Quando o usuário perguntar como está indo, use background_job_status com o jobId. Só anuncie conclusão depois de receber o estado final e o output.',
+  '',
   'MEMÓRIA. Você pode receber memórias persistentes do projeto e trechos recuperados de outras conversas. Use quando forem relevantes e trate-os como o que são: registro do que já foi dito, não verdade absoluta. Quando esses blocos já estiverem no contexto, responda diretamente com eles: não chame memory_list apenas para confirmar os mesmos dados. Não invente lembranças.',
   '',
   'Responda no idioma do usuário — se ele escrever em português, responda em português.',
@@ -34,6 +36,7 @@ const ragProjects = JSON.parse(localStorage.getItem('jarvis:rag-projects') || '{
 const toolContinuationFallbacks = new Map();
 const queuedToolOutcomes = new Map();
 const backgroundJobPolls = new Map();
+const backgroundJobSnapshots = new Map();
 
 // Skills relevantes das 22 importadas de tiagopgr/skills-ia (categoria Código) —
 // deixa de fora as que são mais "automação de negócio" (WhatsApp, planilhas,
@@ -177,6 +180,33 @@ function executionPolicyPrompt() {
   return state.bypassCommands
     ? 'MODO BYPASS DE COMANDOS ATIVO. terminal_run é autorizado automaticamente pelo usuário e sempre executa como job em segundo plano. O backend continua bloqueando referências ao System32, aplicando timeout, ambiente saneado, auditoria e cancelamento. Não peça aprovação para terminal_run; use a tool e aguarde o resultado antes de afirmar que funcionou. Escritas estruturadas e delegações continuam seguindo suas próprias aprovações.'
     : 'MODO PROTEGIDO ATIVO. Terminal, escrita e delegação exigem aprovação explícita na interface.';
+}
+
+function rememberBackgroundJob(job, sessionId) {
+  if (!job?.id) return;
+  backgroundJobSnapshots.set(job.id, {
+    jobId: job.id,
+    sessionId,
+    name: job.name,
+    agent: job.agent,
+    label: job.label,
+    status: job.status,
+    processId: job.processId,
+    externalId: job.externalId,
+    workspace: job.workspace,
+    lastStep: job.lastStep,
+    stepState: job.stepState,
+    completedAt: job.completedAt,
+  });
+  while (backgroundJobSnapshots.size > 20) {
+    backgroundJobSnapshots.delete(backgroundJobSnapshots.keys().next().value);
+  }
+}
+
+function backgroundJobsContext(sessionId = state.sessionId) {
+  const jobs = [...backgroundJobSnapshots.values()].filter((job) => job.sessionId === sessionId);
+  if (!jobs.length) return '';
+  return `Jobs em segundo plano conhecidos desta conversa:\n${JSON.stringify(jobs, null, 2)}\nPara consultar progresso atual, use background_job_status com jobId. Não crie outra delegação.`;
 }
 
 function syncBypassUi() {
@@ -1760,6 +1790,7 @@ async function sendMessage(text) {
           content: BASE_SYSTEM_PROMPT,
         },
         { role: 'system', content: executionPolicyPrompt() },
+        ...(backgroundJobsContext() ? [{ role: 'system', content: backgroundJobsContext() }] : []),
         {
           role: 'system',
           content: currentDateContext(),
@@ -1863,6 +1894,7 @@ async function commitEditedMessage(messageIndex, editedText) {
       messages: [
         { role: 'system', content: BASE_SYSTEM_PROMPT },
         { role: 'system', content: executionPolicyPrompt() },
+        ...(backgroundJobsContext() ? [{ role: 'system', content: backgroundJobsContext() }] : []),
         { role: 'system', content: currentDateContext() },
         ...(persistentMemory ? [{
           role: 'system',
@@ -1960,7 +1992,7 @@ function handleChatEvent(event = {}) {
   }
   if (event.type === 'background.started') {
     const name = event.payload?.name || 'tool';
-    appendToolEvent(requestId, name, 'Executando em segundo plano…');
+    appendToolEvent(requestId, name, 'Iniciando processo…');
     monitorBackgroundJob(event.payload?.job, { requestId, sessionId: state.sessionId, approvalCard: null });
     return;
   }
@@ -2097,12 +2129,23 @@ function continueAfterTool(outcome, { sessionId = state.sessionId } = {}) {
 function monitorBackgroundJob(job, { requestId, sessionId, approvalCard }) {
   if (!job?.id || backgroundJobPolls.has(job.id)) return;
   backgroundJobPolls.set(job.id, true);
+  let startedReported = false;
 
   const poll = async () => {
     try {
       const current = await bridge.tools.backgroundJob({ id: job.id });
-      if (current.status === 'running') {
+      rememberBackgroundJob(current, sessionId);
+      if (current.status === 'starting' || current.status === 'running') {
+        const identityReady = current.status === 'running'
+          && Boolean(current.processId)
+          && !(current.name === 'delegate_coding_task' && current.agent === 'antigravity' && !current.externalId);
         if (approvalCard?.isConnected) {
+          const actions = $('.approval-actions', approvalCard);
+          if (actions && identityReady) {
+            const ids = [`Job ${current.id}`, `PID ${current.processId}`];
+            if (current.externalId) ids.push(`Antigravity ${current.externalId}`);
+            actions.innerHTML = `<span>${escapeHtml(ids.join(' · '))}</span><button class="button compact secondary" data-cancel-background-job="${escapeHtml(current.id)}">Cancelar</button>`;
+          }
           let live = $('.approval-result', approvalCard);
           if (!live) {
             live = document.createElement('pre');
@@ -2110,7 +2153,24 @@ function monitorBackgroundJob(job, { requestId, sessionId, approvalCard }) {
             approvalCard.append(live);
           }
           live.textContent = [current.output?.stdout, current.output?.stderr].filter(Boolean).join('\n').slice(-20_000)
-            || `${current.label || 'Job'} em execução…`;
+            || `${current.label || 'Job'} ${identityReady ? 'confirmado em execução' : 'iniciando'}…`;
+        }
+        if (identityReady && !startedReported) {
+          startedReported = true;
+          const startedResult = {
+            jobId: current.id,
+            processId: current.processId,
+            externalId: current.externalId,
+            agent: current.agent,
+            status: 'running',
+            alive: true,
+            workspace: current.workspace,
+            lastStep: current.lastStep,
+          };
+          if (sessionId === state.sessionId) {
+            appendToolEvent(requestId, current.name || 'tool', `Rodando · ${current.id}`);
+          }
+          continueAfterTool({ name: current.name || 'tool', status: 'running', result: startedResult }, { sessionId });
         }
         setTimeout(poll, 750);
         return;
@@ -3285,7 +3345,7 @@ document.addEventListener('click', async (event) => {
       const background = outcome.status === 'background';
       card.classList.add(outcome.status === 'completed' || background ? 'approved' : 'denied');
       $('.approval-actions', card).innerHTML = background
-        ? `<span>Executando em segundo plano…</span><button class="button compact secondary" data-cancel-background-job="${escapeHtml(outcome.job.id)}">Cancelar</button>`
+        ? `<span>Iniciando processo…</span><button class="button compact secondary" data-cancel-background-job="${escapeHtml(outcome.job.id)}">Cancelar</button>`
         : `<span>${outcome.status === 'completed' ? 'Executada com aprovação' : 'Recusada'}</span>`;
       if (outcome.result) {
         const result = document.createElement('pre');
@@ -3293,7 +3353,7 @@ document.addEventListener('click', async (event) => {
         result.textContent = JSON.stringify(outcome.result, null, 2).slice(0, 20_000);
         card.append(result);
       }
-      appendToolEvent(card.dataset.requestId, outcome.name, background ? 'Executando em segundo plano…' : outcome.status === 'completed' ? 'Concluída' : 'Recusada', outcome.status === 'completed' ? 'success' : '');
+      appendToolEvent(card.dataset.requestId, outcome.name, background ? 'Iniciando processo…' : outcome.status === 'completed' ? 'Concluída' : 'Recusada', outcome.status === 'completed' ? 'success' : '');
       if (outcome.name === 'terminal_run' && outcome.result) appendTerminalResult(outcome.result);
       if (outcome.status === 'completed') {
         verificarMudancasExternas();

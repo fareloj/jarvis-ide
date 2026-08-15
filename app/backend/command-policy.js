@@ -267,7 +267,9 @@ async function readAudit(limite = 100) {
  * Executa um comando ja' autorizado, com ambiente saneado, limite de saida,
  * timeout e encerramento da arvore de processos.
  */
-async function runCommand(command, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, signal, decisao, onOutput } = {}) {
+async function runCommand(command, {
+  cwd, timeoutMs = DEFAULT_TIMEOUT_MS, signal, decisao, onOutput, onStarted,
+} = {}) {
   const inicio = Date.now();
   const resultado = await new Promise((resolve) => {
     const filho = spawn(
@@ -275,6 +277,7 @@ async function runCommand(command, { cwd, timeoutMs = DEFAULT_TIMEOUT_MS, signal
       ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command],
       { cwd, env: sanitizedEnv(), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] },
     );
+    onStarted?.({ pid: filho.pid, cwd: path.resolve(cwd) });
 
     let stdout = '';
     let stderr = '';

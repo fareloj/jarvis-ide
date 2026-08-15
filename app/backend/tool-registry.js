@@ -177,6 +177,19 @@ const DEFINITIONS = Object.freeze([
     },
     policy: { risk: 'execute', approval: 'always' },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'background_job_status',
+      description: 'Consulta estado, IDs e saída parcial de um terminal ou agente delegado em segundo plano. Use quando o usuário perguntar como uma tarefa está indo; nunca inicie outra delegação para consultar progresso.',
+      parameters: {
+        type: 'object',
+        properties: { job_id: { type: 'string', description: 'ID retornado quando o job começou.' } },
+        required: ['job_id'],
+      },
+    },
+    policy: { risk: 'read', approval: 'never' },
+  },
 ]);
 
 function publicDefinitions({ exclude = [] } = {}) {
@@ -340,7 +353,7 @@ const DELEGATE_MAX_BUFFER = 5_000_000;
 // deixa toda essa descendência rodando dentro do projeto do usuário depois do
 // timeout ou do cancelamento. Aqui o encerramento percorre a árvore inteira,
 // pelo mesmo caminho usado pelo terminal mediado (commandPolicy.killTree).
-function runCli(binary, args, { cwd, timeoutMs, signal, onOutput }) {
+function runCli(binary, args, { cwd, timeoutMs, signal, onOutput, onStarted }) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(Object.assign(new Error('Delegação cancelada.'), { cancelled: true }));
@@ -355,6 +368,7 @@ function runCli(binary, args, { cwd, timeoutMs, signal, onOutput }) {
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
+      onStarted?.({ pid: child.pid, cwd: path.resolve(cwd), binary });
     } catch (error) {
       reject(error);
       return;
@@ -414,7 +428,7 @@ function runCli(binary, args, { cwd, timeoutMs, signal, onOutput }) {
 }
 
 async function delegateCodingTask(projectPath, agent, prompt, {
-  signal, onOutput, timeoutMs = DELEGATE_TIMEOUT_MS,
+  signal, onOutput, onStarted, onMetadata, timeoutMs = DELEGATE_TIMEOUT_MS,
 } = {}) {
   const cwd = path.resolve(String(projectPath || ''));
   const promptText = String(prompt || '').trim();
@@ -429,7 +443,7 @@ async function delegateCodingTask(projectPath, agent, prompt, {
       // que o usuário já tem configurada.
       const { stdout } = await runCli(binary, [
         '-p', promptText, '--output-format', 'json', '--permission-mode', 'acceptEdits',
-      ], { cwd, timeoutMs, signal, onOutput });
+      ], { cwd, timeoutMs, signal, onOutput, onStarted });
       const parsed = JSON.parse(stdout);
       return { agent, result: String(parsed.result || '').trim() };
     }
@@ -438,24 +452,74 @@ async function delegateCodingTask(projectPath, agent, prompt, {
       const outputFile = path.join(os.tmpdir(), `jarvis-codex-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`);
       await runCli(binary, [
         'exec', promptText, '--sandbox', 'workspace-write', '--skip-git-repo-check', '--output-last-message', outputFile,
-      ], { cwd, timeoutMs, signal, onOutput });
+      ], { cwd, timeoutMs, signal, onOutput, onStarted });
       const result = await fs.readFile(outputFile, 'utf8').catch(() => '');
       await fs.unlink(outputFile).catch(() => {});
       return { agent, result: result.trim() };
     }
 
     if (agent === 'antigravity') {
-      // A versão instalada do agy (1.0.10) não aceita --output-format — o
-      // --help real da CLI não lista essa flag, mesmo a documentação oficial
-      // mencionando. -p sozinho já imprime a resposta em texto puro no stdout.
-      // --dangerously-skip-permissions é necessário: por padrão, o agy nega
-      // silenciosamente (sem erro, saída vazia) qualquer tool que exigiria
-      // aprovação interativa — headless não tem como perguntar. A aprovação
-      // real de segurança já aconteceu no nível da tool do JARVIS.
+      // stream-json e' o contrato headless oficial desde a 1.1.8: o init
+      // entrega conversation_id/cwd, step_update informa progresso e result
+      // encerra a execucao. --add-dir declara explicitamente o workspace.
+      let ndjsonBuffer = '';
+      let finalEvent = null;
+      let conversationId = null;
+      const parseEvents = (chunk) => {
+        ndjsonBuffer += chunk;
+        const lines = ndjsonBuffer.split(/\r?\n/);
+        ndjsonBuffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line);
+            if (event.event === 'init') {
+              conversationId = event.conversation_id || event.init?.conversation_id || null;
+              onMetadata?.({ externalId: conversationId, workspace: event.init?.cwd || cwd, event: 'init' });
+            } else if (event.event === 'step_update') {
+              onMetadata?.({
+                externalId: event.step_update?.conversation_id || conversationId,
+                lastStep: event.step_update?.step_type || 'unknown',
+                stepState: event.step_update?.state || null,
+                event: 'step_update',
+              });
+            } else if (event.event === 'result') {
+              finalEvent = event.result || null;
+              onMetadata?.({ externalId: finalEvent?.conversation_id || conversationId, event: 'result' });
+            }
+          } catch { /* output bruto continua disponível no log do job */ }
+        }
+      };
+      const scopedPrompt = [
+        `WORKSPACE OBRIGATÓRIO: ${cwd}`,
+        'Crie e edite os arquivos solicitados exclusivamente nesse workspace. Não use ~/.gemini/antigravity-cli/scratch e não crie outro projeto fora dele.',
+        '',
+        promptText,
+      ].join('\n');
       const { stdout } = await runCli(binary, [
-        '-p', promptText, '--dangerously-skip-permissions',
-      ], { cwd, timeoutMs, signal, onOutput });
-      return { agent, result: stdout.trim() };
+        '-p', scopedPrompt,
+        '--output-format', 'stream-json',
+        '--add-dir', cwd,
+        '--print-timeout', `${Math.ceil(timeoutMs / 1000)}s`,
+        '--dangerously-skip-permissions',
+      ], {
+        cwd, timeoutMs: timeoutMs + 5_000, signal, onStarted,
+        onOutput: (stream, chunk) => {
+          onOutput?.(stream, chunk);
+          if (stream === 'stdout') parseEvents(chunk);
+        },
+      });
+      if (ndjsonBuffer.trim()) parseEvents('\n');
+      if (!finalEvent) throw Object.assign(new Error('Antigravity não emitiu o evento result esperado.'), { stdout });
+      if (finalEvent.status !== 'SUCCESS') {
+        throw Object.assign(new Error(`Antigravity terminou com status ${finalEvent.status || 'desconhecido'}.`), { stdout });
+      }
+      return {
+        agent,
+        conversationId: finalEvent.conversation_id || conversationId,
+        workspace: cwd,
+        result: String(finalEvent.response || '').trim(),
+      };
     }
   } catch (error) {
     if (error.code === 'ENOENT') {
@@ -503,6 +567,7 @@ async function runTool(name, args = {}, context = {}) {
       signal: context.signal,
       decisao,
       onOutput: context.onOutput,
+      onStarted: context.onStarted,
       timeoutMs: Math.max(1_000, Math.min(900_000, (Number(args.timeout_seconds) || 60) * 1_000)),
     });
   }
@@ -510,8 +575,15 @@ async function runTool(name, args = {}, context = {}) {
     return delegateCodingTask(projectPath, args.agent, args.prompt, {
       signal: context.signal,
       onOutput: context.onOutput,
+      onStarted: context.onStarted,
+      onMetadata: context.onMetadata,
       timeoutMs: Math.max(30_000, Math.min(3_600_000, (Number(args.timeout_seconds) || 1800) * 1_000)),
     });
+  }
+  if (name === 'background_job_status') {
+    const job = getBackgroundJob(args.job_id);
+    if (!job) throw new Error('Job em segundo plano não encontrado ou expirado.');
+    return job;
   }
   // As tools de escrita nunca chegam aqui pelo caminho normal: elas sao
   // aplicadas a partir do plano congelado em resolveApproval. Este ramo
@@ -534,11 +606,17 @@ function publicBackgroundJob(job) {
     id: job.id,
     name: job.name,
     label: job.label,
+    agent: job.agent || null,
     status: job.status,
     createdAt: job.createdAt,
     completedAt: job.completedAt || null,
     result: job.result || null,
     error: job.error || null,
+    processId: job.processId || null,
+    externalId: job.externalId || null,
+    workspace: job.workspace || null,
+    lastStep: job.lastStep || null,
+    stepState: job.stepState || null,
     output: { stdout: job.stdout, stderr: job.stderr },
   };
 }
@@ -550,16 +628,22 @@ function startBackgroundJob(pending, runner = runTool) {
   const job = {
     id,
     name: pending.name,
+    agent: pending.args.agent || null,
     label: pending.name === 'delegate_coding_task'
       ? (DELEGATE_LABELS[pending.args.agent] || pending.args.agent)
       : 'Terminal',
-    status: 'running',
+    status: 'starting',
     createdAt: new Date().toISOString(),
     completedAt: null,
     result: null,
     error: null,
     stdout: '',
     stderr: '',
+    processId: null,
+    externalId: null,
+    workspace: path.resolve(String(pending.context?.projectPath || '')),
+    lastStep: null,
+    stepState: null,
     controller,
   };
   backgroundJobs.set(id, job);
@@ -568,10 +652,23 @@ function startBackgroundJob(pending, runner = runTool) {
     const key = stream === 'stderr' ? 'stderr' : 'stdout';
     job[key] = `${job[key]}${String(chunk || '')}`.slice(-JOB_OUTPUT_LIMIT);
   };
+  const onStarted = ({ pid, cwd } = {}) => {
+    job.processId = Number(pid) || null;
+    job.workspace = cwd ? path.resolve(cwd) : job.workspace;
+    job.status = 'running';
+  };
+  const onMetadata = (metadata = {}) => {
+    if (metadata.externalId) job.externalId = metadata.externalId;
+    if (metadata.workspace) job.workspace = path.resolve(metadata.workspace);
+    if (metadata.lastStep) job.lastStep = metadata.lastStep;
+    if (metadata.stepState) job.stepState = metadata.stepState;
+  };
   runner(pending.name, pending.args, {
     ...pending.context,
     signal: controller.signal,
     onOutput,
+    onStarted,
+    onMetadata,
   })
     .then((result) => {
       job.result = result;
@@ -602,7 +699,7 @@ function getBackgroundJob(id) {
 
 async function cancelBackgroundJob(id) {
   const job = backgroundJobs.get(String(id || ''));
-  if (!job || job.status !== 'running') return false;
+  if (!job || !['starting', 'running'].includes(job.status)) return false;
   job.controller.abort();
   return true;
 }
