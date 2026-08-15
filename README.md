@@ -2,6 +2,8 @@
 
 # JARVIS
 
+O cliente móvel está documentado em [docs/ANDROID_COMPANION.md](docs/ANDROID_COMPANION.md).
+
 **An agentic development environment that runs on your machine.**
 
 Local models through Ollama · tools that ask before they act · project RAG · memory that survives across conversations.
