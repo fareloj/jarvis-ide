@@ -619,7 +619,7 @@ function specialPage(type) {
   } else if (type === 'files') {
     page.className = 'content-view file-browser-page special-page';
     page.innerHTML = `
-      <div class="file-browser-header">
+      <div class="file-browser-header project-page-header">
         <div><p class="eyebrow">Projeto aberto</p><h1>${escapeHtml(state.project.name)}</h1></div>
         <button class="button secondary" data-action="open-project"><i class="ph-duotone ph-folder-open"></i>Trocar pasta</button>
       </div>
@@ -630,7 +630,7 @@ function specialPage(type) {
   } else if (type === 'git') {
     page.className = 'content-view git-page special-page';
     page.innerHTML = `
-      <div class="file-browser-header git-page-header">
+      <div class="file-browser-header project-page-header">
         <div><p class="eyebrow">Alterações</p><h1>${escapeHtml(state.project.name)}</h1></div>
       </div>
       <div class="git-layout">
