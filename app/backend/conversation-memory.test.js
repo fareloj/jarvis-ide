@@ -56,6 +56,36 @@ test('recupera um turno dito em outra sessão (o caso "eu gosto de bola")', asyn
   assert.ok(hits[0].score >= memory.MIN_RECALL_SCORE);
 });
 
+test('recupera a resposta ligada à pergunta encontrada e deduplica perguntas repetidas', async (context) => {
+  const restore = installFakeEmbedding();
+  memory.resetCache();
+  context.after(restore);
+
+  for (const sessionId of ['sessao-A', 'sessao-B']) {
+    await memory.rememberTurns({
+      projectPath: '/projeto/pares',
+      sessionId,
+      sessionTitle: 'Sobre Daniel',
+      turns: [
+        { role: 'user', content: 'O que você sabe sobre mim e futebol?' },
+        { role: 'assistant', content: 'Você joga futebol todo domingo e gosta de bola.' },
+      ],
+    });
+  }
+
+  const hits = await memory.recallRelevant({
+    projectPath: '/projeto/pares',
+    sessionId: 'sessao-C',
+    query: 'O que você sabe sobre mim e futebol?',
+  });
+
+  assert.equal(hits.length, 1, 'perguntas equivalentes não devem ocupar vários resultados');
+  assert.deepEqual(hits[0].turns.map((turn) => turn.role), ['user', 'assistant']);
+  const prompt = memory.formatRecallForPrompt(hits);
+  assert.match(prompt, /O que você sabe sobre mim e futebol\?/);
+  assert.match(prompt, /Você joga futebol todo domingo e gosta de bola\./);
+});
+
 test('não recupera turnos da própria sessão nem assunto sem relação', async (context) => {
   const restore = installFakeEmbedding();
   memory.resetCache();
@@ -114,6 +144,24 @@ test('ignora turnos curtos demais e não duplica o mesmo conteúdo', async (cont
   });
   assert.equal(primeira.remembered, 1);
   assert.equal(repetida.remembered, 0, 'repetir a mesma frase não deve inflar a memória');
+});
+
+test('ignora saudações genéricas do assistente para não poluir o recall', async (context) => {
+  const restore = installFakeEmbedding();
+  memory.resetCache();
+  context.after(restore);
+
+  const result = await memory.rememberTurns({
+    projectPath: '/projeto/saudacao',
+    sessionId: 'sessao-A',
+    turns: [{ role: 'assistant', content: 'Olá! Como posso ajudar você hoje?' }],
+  });
+  assert.equal(result.remembered, 0);
+
+  const hits = await memory.recallRelevant({
+    projectPath: '/projeto/saudacao', sessionId: 'sessao-B', query: 'futebol e bola',
+  });
+  assert.deepEqual(hits, []);
 });
 
 test('sobrevive à queda do serviço de embedding sem derrubar o chat', async (context) => {

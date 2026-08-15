@@ -10,6 +10,12 @@ const {
 
 const ehWindows = process.platform === 'win32';
 
+test('publicDefinitions pode omitir tools já satisfeitas pelo contexto', () => {
+  const definitions = publicDefinitions({ exclude: ['memory_list'] });
+  assert.equal(definitions.some((item) => item.function.name === 'memory_list'), false);
+  assert.equal(definitions.some((item) => item.function.name === 'memory_save'), true);
+});
+
 test('tools de arquivo permanecem confinadas ao projeto', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-tool-'));
   await fs.writeFile(path.join(root, 'hello.txt'), 'olá', 'utf8');

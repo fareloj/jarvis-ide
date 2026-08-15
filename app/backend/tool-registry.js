@@ -171,8 +171,11 @@ const DEFINITIONS = Object.freeze([
   },
 ]);
 
-function publicDefinitions() {
-  return DEFINITIONS.map(({ policy, ...definition }) => definition);
+function publicDefinitions({ exclude = [] } = {}) {
+  const excluded = new Set(exclude);
+  return DEFINITIONS
+    .filter(({ function: fn }) => !excluded.has(fn.name))
+    .map(({ policy, ...definition }) => definition);
 }
 
 function describeTools() {

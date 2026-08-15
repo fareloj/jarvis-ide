@@ -170,12 +170,19 @@ function redactSecrets(text) {
   return redacted;
 }
 
-function isWorthRemembering(content) {
+function isGenericAssistantGreeting(content) {
+  const normalized = normalizedDedupeKey(content);
+  return /^(oi|ola|hello|hi)\b/.test(normalized)
+    && /\b(como|em que) posso ajudar\b/.test(normalized);
+}
+
+function isWorthRemembering(content, role) {
   const normalized = String(content || '').trim();
   if (normalized.length < MIN_CONTENT_LENGTH) return false;
   // Blocos de anexo injetados pelo compositor já vivem no arquivo original;
   // guardar o conteúdo inteiro de novo só polui a memória.
   if (normalized.startsWith('[Anexo:')) return false;
+  if (role === 'assistant' && isGenericAssistantGreeting(normalized)) return false;
   return true;
 }
 
@@ -187,11 +194,16 @@ async function rememberTurns({ projectPath, sessionId, sessionTitle, turns = [] 
   if (!ENABLED || !sessionId || !Array.isArray(turns) || !turns.length) return { remembered: 0 };
   const key = scopeKey(projectPath);
   const scope = await loadScope(key);
+  // Uma chamada representa uma troca da conversa (normalmente pergunta +
+  // resposta). Preservar esse vínculo impede que a busca encontre apenas a
+  // pergunta antiga e descarte justamente a resposta que contém os fatos.
+  const exchangeId = crypto.randomUUID();
   let remembered = 0;
 
-  for (const turn of turns) {
+  for (const [turnIndex, turn] of turns.entries()) {
     const content = redactSecrets(String(turn?.content || '').trim().slice(0, MAX_CONTENT_LENGTH));
-    if (!isWorthRemembering(content)) continue;
+    const role = turn.role === 'assistant' ? 'assistant' : 'user';
+    if (!isWorthRemembering(content, role)) continue;
     if (scope.records.some((record) => record.sessionId === sessionId && record.content === content)) continue;
 
     let vector;
@@ -207,7 +219,9 @@ async function rememberTurns({ projectPath, sessionId, sessionTitle, turns = [] 
       id: crypto.randomUUID(),
       sessionId,
       sessionTitle: String(sessionTitle || '').slice(0, 120),
-      role: turn.role === 'assistant' ? 'assistant' : 'user',
+      exchangeId,
+      turnIndex,
+      role,
       content,
       createdAt: new Date().toISOString(),
       vector,
@@ -224,6 +238,58 @@ async function rememberTurns({ projectPath, sessionId, sessionTitle, turns = [] 
   return { remembered };
 }
 
+function normalizedDedupeKey(content) {
+  return String(content || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+// Registros novos têm exchangeId. Para os vetores já existentes em disco,
+// reconstrói pares quando um turno do usuário é seguido pela resposta da
+// mesma sessão. Assim a melhoria vale sem migração nem re-embedding.
+function buildRecallUnits(records, excludedSessionId) {
+  const eligible = records.filter((record) => (
+    record.sessionId !== excludedSessionId
+    && !(record.role === 'assistant' && isGenericAssistantGreeting(record.content))
+  ));
+  const units = [];
+  const byExchange = new Map();
+
+  for (const record of eligible) {
+    if (!record.exchangeId) continue;
+    const key = `${record.sessionId}\u0000${record.exchangeId}`;
+    if (!byExchange.has(key)) {
+      const unit = { records: [] };
+      byExchange.set(key, unit);
+      units.push(unit);
+    }
+    byExchange.get(key).records.push(record);
+  }
+
+  const legacy = eligible.filter((record) => !record.exchangeId);
+  for (let index = 0; index < legacy.length; index += 1) {
+    const current = legacy[index];
+    const next = legacy[index + 1];
+    if (current.role === 'user' && next?.role === 'assistant' && next.sessionId === current.sessionId) {
+      units.push({ records: [current, next] });
+      index += 1;
+    } else {
+      units.push({ records: [current] });
+    }
+  }
+
+  for (const unit of units) {
+    unit.records.sort((left, right) => (
+      Number(left.turnIndex ?? 0) - Number(right.turnIndex ?? 0)
+      || String(left.createdAt || '').localeCompare(String(right.createdAt || ''))
+    ));
+  }
+  return units;
+}
+
 /**
  * Recupera turnos semanticamente próximos vindos de OUTRAS sessões.
  * A sessão atual é excluída de propósito: o que foi dito nela já está no
@@ -235,8 +301,8 @@ async function recallRelevant({ projectPath, sessionId, query, limit = DEFAULT_R
   if (normalizedQuery.length < MIN_CONTENT_LENGTH) return [];
 
   const scope = await loadScope(scopeKey(projectPath));
-  const candidates = scope.records.filter((record) => record.sessionId !== sessionId);
-  if (!candidates.length) return [];
+  const units = buildRecallUnits(scope.records, sessionId);
+  if (!units.length) return [];
 
   let queryVector;
   try {
@@ -245,25 +311,49 @@ async function recallRelevant({ projectPath, sessionId, query, limit = DEFAULT_R
     return [];
   }
 
-  return candidates
-    .map((record) => ({
-      score: dot(queryVector, record.vector),
-      role: record.role,
-      content: record.content,
-      sessionTitle: record.sessionTitle,
-      createdAt: record.createdAt,
-    }))
+  const ranked = units
+    .map((unit) => {
+      const scored = unit.records.map((record) => ({ record, score: dot(queryVector, record.vector) }));
+      scored.sort((left, right) => right.score - left.score);
+      const anchor = scored[0];
+      return {
+        score: anchor.score,
+        role: anchor.record.role,
+        content: anchor.record.content,
+        sessionTitle: anchor.record.sessionTitle,
+        createdAt: anchor.record.createdAt,
+        exchangeId: anchor.record.exchangeId || null,
+        turns: unit.records.map((record) => ({ role: record.role, content: record.content })),
+      };
+    })
     .filter((hit) => hit.score >= MIN_RECALL_SCORE)
-    .sort((left, right) => right.score - left.score)
-    .slice(0, Math.max(1, Math.min(10, limit)));
+    .sort((left, right) => right.score - left.score);
+
+  // A mesma pergunta reaparece com frequência em chats diferentes. Uma cópia
+  // basta; o espaço restante deve trazer outras trocas potencialmente úteis.
+  const deduplicated = [];
+  const seen = new Set();
+  for (const hit of ranked) {
+    const userTurn = hit.turns.find((turn) => turn.role === 'user');
+    const key = normalizedDedupeKey(userTurn?.content || hit.content);
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    deduplicated.push(hit);
+  }
+  return deduplicated.slice(0, Math.max(1, Math.min(10, limit)));
 }
 
 function formatRecallForPrompt(hits = []) {
   if (!hits.length) return '';
-  const lines = hits.map((hit) => {
-    const who = hit.role === 'assistant' ? 'Você respondeu' : 'O usuário disse';
+  const lines = hits.flatMap((hit) => {
     const where = hit.sessionTitle ? ` (conversa "${hit.sessionTitle}")` : '';
-    return `- ${who}${where}: ${hit.content}`;
+    const turns = Array.isArray(hit.turns) && hit.turns.length
+      ? hit.turns
+      : [{ role: hit.role, content: hit.content }];
+    return turns.map((turn) => {
+      const who = turn.role === 'assistant' ? 'Você respondeu' : 'O usuário disse';
+      return `- ${who}${where}: ${turn.content}`;
+    });
   });
   // Este bloco entra como mensagem de sistema, mas o conteúdo é transcrição
   // de conversa — que pode conter texto que o usuário colou de uma página,

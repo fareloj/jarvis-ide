@@ -21,7 +21,7 @@ const BASE_SYSTEM_PROMPT = [
   '',
   'APROVAÇÕES SÃO DO USUÁRIO. Tools de escrita, terminal e delegação exigem aprovação explícita por design. Explique em uma frase o que vai rodar e por quê; nunca tente contornar a aprovação nem pressione por ela.',
   '',
-  'MEMÓRIA. Você pode receber memórias persistentes do projeto e trechos recuperados de outras conversas. Use quando forem relevantes e trate-os como o que são: registro do que já foi dito, não verdade absoluta. Não invente lembranças.',
+  'MEMÓRIA. Você pode receber memórias persistentes do projeto e trechos recuperados de outras conversas. Use quando forem relevantes e trate-os como o que são: registro do que já foi dito, não verdade absoluta. Quando esses blocos já estiverem no contexto, responda diretamente com eles: não chame memory_list apenas para confirmar os mesmos dados. Não invente lembranças.',
   '',
   'Responda no idioma do usuário — se ele escrever em português, responda em português.',
 ].join('\n');

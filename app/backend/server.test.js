@@ -161,6 +161,12 @@ test('health e chat preservam o contrato do frontend', async (context) => {
   ));
   assert.ok(memoryPrompt);
   assert.match(memoryPrompt.content, /Banco principal: O projeto usa PostgreSQL\./);
+  assert.equal(
+    chatPayloads.at(-1).tools.some((tool) => tool.function.name === 'memory_list'),
+    false,
+    'memory_list é redundante quando a memória já foi incluída no prompt',
+  );
+  assert.equal(chatPayloads.at(-1).tools.some((tool) => tool.function.name === 'memory_save'), true);
   assert.equal(events.map((event) => event.payload.content || '').join(''), 'Olá! **Tudo bem?**');
 });
 

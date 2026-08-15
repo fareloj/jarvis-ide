@@ -161,6 +161,7 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
   const skillPrompt = formatSkillsForPrompt(activeSkills);
   const memories = options.projectPath && !options.memoryContextIncluded ? await listMemories(options.projectPath) : [];
   const memoryPrompt = formatMemoriesForPrompt(memories);
+  const memoryContextAvailable = options.memoryContextIncluded || memories.length > 0;
 
   // Memória semântica entre chats: recupera o que foi dito em OUTRAS sessões
   // e que se parece com a mensagem atual. Nunca deve derrubar a conversa —
@@ -220,7 +221,11 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
           model: model || DEFAULT_MODEL,
           messages: conversation,
           stream: true,
-          tools: options.toolsEnabled === false ? undefined : tools.publicDefinitions(),
+          // Se a memória explícita já veio no prompt, memory_list só faria o
+          // modelo reler os mesmos dados e atrasaria a resposta com uma tool.
+          tools: options.toolsEnabled === false
+            ? undefined
+            : tools.publicDefinitions({ exclude: memoryContextAvailable ? ['memory_list'] : [] }),
         }),
         signal: AbortSignal.any([runSignal, AbortSignal.timeout(Math.min(180_000, Math.max(1, deadline - Date.now())))]),
       });
