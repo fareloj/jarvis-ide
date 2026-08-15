@@ -630,7 +630,7 @@ function specialPage(type) {
   } else if (type === 'git') {
     page.className = 'content-view git-page special-page';
     page.innerHTML = `
-      <div class="file-browser-header">
+      <div class="file-browser-header git-page-header">
         <div><p class="eyebrow">Alterações</p><h1>${escapeHtml(state.project.name)}</h1></div>
       </div>
       <div class="git-layout">
