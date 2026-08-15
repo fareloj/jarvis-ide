@@ -37,7 +37,9 @@ test('job confirmado vivo gera uma atualização de início, não de conclusão'
       result: { jobId: 'delegate-123', processId: 4242, externalId: 'agy-abc', alive: true },
     },
   });
-  assert.match(messages[2].content, /NÃO terminou/);
+  assert.match(messages[2].content, /NÃO prova que a tarefa começou/);
+  assert.match(messages[2].content, /autenticando/);
+  assert.match(messages[2].content, /não diga "criando"/i);
   assert.match(messages[2].content, /jobId/);
   assert.match(messages.at(-1).content, /delegate-123/);
   assert.match(continuation.fallbackFor({ name: 'delegate_coding_task', status: 'running' }), /iniciada/i);

@@ -13,6 +13,12 @@ test('inicia cada CLI em modo estruturado e confinado', () => {
   assert.ok(agy.args.includes('stream-json'));
   assert.ok(agy.args.includes('--sandbox'));
   assert.ok(agy.args.includes(path.resolve(cwd)));
+  assert.equal(agy.args.includes('--effort'), false, 'Antigravity deve escolher effort compativel por padrao');
+
+  const agyMedium = buildTaskInvocation('antigravity', { cwd, prompt: 'Teste', effort: 'medium' });
+  assert.equal(agyMedium.args.includes('--effort'), false, 'medium inseguro deve ser normalizado para automatico');
+  const agyHigh = buildTaskInvocation('antigravity', { cwd, prompt: 'Teste', effort: 'high' });
+  assert.deepEqual(agyHigh.args.slice(-2), ['--effort', 'high']);
 
   const codex = buildTaskInvocation('codex', { cwd, prompt: 'Teste', outputFile: 'final.txt' });
   assert.ok(codex.args.includes('--json'));

@@ -22,6 +22,8 @@ const BASE_SYSTEM_PROMPT = [
   '',
   'APROVAÇÕES SÃO DO USUÁRIO. Tools de escrita, terminal e delegação exigem aprovação explícita por design. Explique em uma frase o que vai rodar e por quê; nunca tente contornar a aprovação nem pressione por ela.',
   '',
+  'SKILL ANTES DA EXECUÇÃO. Quando uma tool retornar status skill_loaded, ela NÃO executou, não pediu aprovação e não criou job. Leia as instruções recebidas e, se os pré-requisitos estiverem satisfeitos, chame exatamente a tool necessária outra vez. Nunca consulte background_job_status sem um jobId real e nunca anuncie início, conclusão ou falha a partir de skill_loaded.',
+  '',
   'JOBS EM SEGUNDO PLANO. Quando terminal_run, delegate_coding_task, continue_coding_task, review_coding_changes ou inspect_coding_agent retornar um job em execução, registre o jobId e os identificadores fornecidos. Isso comprova que a execução começou: nunca diga depois que ela não foi executada e nunca crie uma segunda delegação para conferir progresso. Quando o usuário perguntar como está indo, use background_job_status com o jobId. Só anuncie conclusão depois de receber o estado final e o output.',
   '',
   'MEMÓRIA. Você pode receber memórias persistentes do projeto e trechos recuperados de outras conversas. Use quando forem relevantes e trate-os como o que são: registro do que já foi dito, não verdade absoluta. Quando esses blocos já estiverem no contexto, responda diretamente com eles: não chame memory_list apenas para confirmar os mesmos dados. Não invente lembranças.',
@@ -1982,7 +1984,14 @@ function handleChatEvent(event = {}) {
     return;
   }
   if (event.type === 'tool.result') {
-    appendToolEvent(requestId, event.payload?.name, 'Concluída', 'success');
+    const skillDisclosure = event.payload?.skillDisclosure === true
+      || event.payload?.result?.status === 'skill_loaded';
+    appendToolEvent(
+      requestId,
+      event.payload?.name,
+      skillDisclosure ? 'Skill carregada · aguardando nova chamada' : 'Concluída',
+      skillDisclosure ? '' : 'success',
+    );
     if (event.payload?.name === 'terminal_run') appendTerminalResult(event.payload.result);
     return;
   }
@@ -2130,6 +2139,7 @@ function monitorBackgroundJob(job, { requestId, sessionId, approvalCard }) {
   if (!job?.id || backgroundJobPolls.has(job.id)) return;
   backgroundJobPolls.set(job.id, true);
   let startedReported = false;
+  let identityReadySince = 0;
 
   const poll = async () => {
     try {
@@ -2141,6 +2151,9 @@ function monitorBackgroundJob(job, { requestId, sessionId, approvalCard }) {
         const identityReady = current.status === 'running'
           && Boolean(current.processId)
           && !(needsExternalIdentity && !current.externalId);
+        if (identityReady && !identityReadySince) identityReadySince = Date.now();
+        if (!identityReady) identityReadySince = 0;
+        const stableRunning = identityReady && Date.now() - identityReadySince >= 1_500;
         if (approvalCard?.isConnected) {
           const actions = $('.approval-actions', approvalCard);
           if (actions && identityReady) {
@@ -2157,7 +2170,7 @@ function monitorBackgroundJob(job, { requestId, sessionId, approvalCard }) {
           live.textContent = [current.output?.stdout, current.output?.stderr].filter(Boolean).join('\n').slice(-20_000)
             || `${current.label || 'Job'} ${identityReady ? 'confirmado em execução' : 'iniciando'}…`;
         }
-        if (identityReady && !startedReported) {
+        if (stableRunning && !startedReported) {
           startedReported = true;
           const startedResult = {
             jobId: current.id,

@@ -16,7 +16,11 @@ function assertAgent(agent) {
 function optionalFlags(agent, { model, effort } = {}) {
   const args = [];
   if (model) args.push('--model', String(model));
-  if (effort && agent !== 'codex') args.push('--effort', String(effort));
+  // O Antigravity valida effort contra o modelo selecionado na configuracao.
+  // Alguns modelos (como gemini-3.1-pro) aceitam apenas low/high; omitir
+  // "medium" deixa a propria CLI escolher um valor compativel.
+  const normalizedEffort = agent === 'antigravity' && effort === 'medium' ? null : effort;
+  if (normalizedEffort && agent !== 'codex') args.push('--effort', String(normalizedEffort));
   return args;
 }
 
@@ -31,7 +35,7 @@ function scopedPrompt(cwd, prompt) {
 }
 
 function buildTaskInvocation(agent, {
-  cwd, prompt, sessionId, timeoutMs = 1_800_000, model, effort = 'medium', mode = 'edit', outputFile,
+  cwd, prompt, sessionId, timeoutMs = 1_800_000, model, effort, mode = 'edit', outputFile,
 } = {}) {
   assertAgent(agent);
   const text = scopedPrompt(cwd, prompt);

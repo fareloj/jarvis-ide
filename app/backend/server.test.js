@@ -261,6 +261,11 @@ test('primeira tentativa de tool operacional divulga a skill e so a segunda pede
   assert.ok(disclosed);
   assert.match(disclosed.content, /inspect-coding-agent/);
   assert.match(disclosed.content, /Escolher capacidade suportada/);
+  const disclosure = JSON.parse(disclosed.content);
+  assert.equal(disclosure.executed, false);
+  assert.equal(disclosure.approval_requested, false);
+  assert.equal(disclosure.job_created, false);
+  assert.match(disclosure.next_action, /ainda nao executou/i);
 
   const events = response.body.trim().split('\n').map((line) => JSON.parse(line));
   const toolResults = events.filter((event) => event.type === 'tool.result');

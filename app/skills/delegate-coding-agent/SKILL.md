@@ -44,7 +44,7 @@ Não mandar frases vagas como “faça funcionar” ou “termine o projeto”. 
 - `agent`: usar exatamente `antigravity`, `codex` ou `claude-code`.
 - `prompt`: enviar o briefing autocontido.
 - `mode`: usar `plan` quando nenhuma edição for autorizada; usar `edit` para implementação.
-- `effort`: usar `low` em tarefas mecânicas, `medium` por padrão e `high` para arquitetura, bugs difíceis ou revisão crítica.
+- `effort`: omitir por padrão para a CLI escolher um valor compatível. No Antigravity, usar somente `low` ou `high` quando houver motivo; alguns modelos rejeitam `medium`. Em Claude Code, `medium` pode ser usado quando explicitamente desejado.
 - `model`: omitir para usar a configuração da CLI; informar apenas se o usuário ou a tarefa exigir um modelo específico.
 - `timeout_seconds`: usar 300–900 para tarefas pequenas, 1800 por padrão e até 3600 para tarefas grandes.
 
@@ -52,7 +52,8 @@ Não mandar frases vagas como “faça funcionar” ou “termine o projeto”. 
 
 Após aprovação, a tool deve retornar imediatamente um job com `id`, `status`, `processId`, `workspace` e, quando a CLI emitir, `externalId`.
 
-- Só afirmar “iniciou” depois de receber `job.id` e estado `starting` ou `running`.
+- `skill_loaded` não é execução: não criou job e exige uma nova chamada da mesma tool.
+- Só afirmar que o processo iniciou depois de receber `job.id`, PID e estado `running`; isso ainda não comprova que o agente começou a editar.
 - Guardar o `job.id`; ele controla o processo atual.
 - Guardar `externalId`; ele identifica a conversa nativa que poderá ser retomada depois.
 - Não afirmar conclusão enquanto o job estiver `starting` ou `running`.

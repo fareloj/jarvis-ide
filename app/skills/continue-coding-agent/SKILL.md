@@ -29,7 +29,7 @@ Se o ID estiver ausente, não adivinhar. Iniciar nova delegação apenas com aut
 - `session_id`: copiar exatamente o ID nativo, sem prefixos do JARVIS.
 - `prompt`: indicar o que mudou, o que falta e como validar.
 - `mode`: usar `plan` para análise sem edição e `edit` para continuar implementando.
-- `effort`, `model` e `timeout_seconds`: manter os valores anteriores quando conhecidos; caso contrário usar `medium`, modelo padrão e 1800 segundos.
+- `effort`: omitir quando não for conhecido. No Antigravity, não usar `medium`; escolher `low` ou `high` apenas quando necessário. Manter `model` anterior quando conhecido e usar 1800 segundos como timeout padrão.
 
 ## Interpretar o retorno
 

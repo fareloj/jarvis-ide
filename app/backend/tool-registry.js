@@ -739,7 +739,7 @@ async function runTool(name, args = {}, context = {}) {
       onMetadata: context.onMetadata,
       timeoutMs: Math.max(30_000, Math.min(3_600_000, (Number(args.timeout_seconds) || 1800) * 1_000)),
       mode: args.mode || 'edit',
-      effort: args.effort || 'medium',
+      effort: args.effort,
       model: args.model,
     });
   }
@@ -751,7 +751,7 @@ async function runTool(name, args = {}, context = {}) {
       onMetadata: context.onMetadata,
       timeoutMs: Math.max(30_000, Math.min(3_600_000, (Number(args.timeout_seconds) || 1800) * 1_000)),
       mode: args.mode || 'edit',
-      effort: args.effort || 'medium',
+      effort: args.effort,
       model: args.model,
     });
   }

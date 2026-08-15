@@ -289,10 +289,13 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
         });
         const disclosure = {
           status: 'skill_loaded',
+          executed: false,
+          approval_requested: false,
+          job_created: false,
           tool: name,
           skill: { id: requiredSkill.id, name: requiredSkill.name, description: requiredSkill.description },
           instructions: requiredSkill.content,
-          next_action: `Leia e siga a skill. Depois chame ${name} novamente apenas se os pre-requisitos estiverem satisfeitos.`,
+          next_action: `Leia e siga a skill. Nao diga que a tool iniciou, concluiu ou falhou: ela ainda nao executou. Chame ${name} novamente com os argumentos adequados apenas se os pre-requisitos estiverem satisfeitos.`,
         };
         runMetrics.toolResults += 1;
         emit(EVENT_TYPES.TOOL_RESULT, { name, result: disclosure, skillDisclosure: true });
