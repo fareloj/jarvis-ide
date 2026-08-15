@@ -273,3 +273,40 @@ test('primeira tentativa de tool operacional divulga a skill e so a segunda pede
   assert.equal(toolResults[0].payload.skillDisclosure, true);
   assert.ok(events.some((event) => event.type === 'approval.required'));
 });
+
+test('allowlist remota nunca oferece tools fora do conjunto informado', async (context) => {
+  const originalFetch = global.fetch;
+  let offered = [];
+  global.fetch = async (_url, options = {}) => {
+    const body = JSON.parse(options.body || '{}');
+    offered = (body.tools || []).map((tool) => tool.function.name);
+    return new Response(`${JSON.stringify({ message: { content: 'ok' }, done: true })}\n`, {
+      status: 200,
+      headers: { 'Content-Type': 'application/x-ndjson' },
+    });
+  };
+  const backend = await startBackend();
+  context.after(() => {
+    backend.server.close();
+    global.fetch = originalFetch;
+  });
+
+  const response = await requestText(`${backend.url}/api/chat/stream`, {
+    method: 'POST',
+    token: backend.authToken,
+    body: {
+      model: 'gpt-oss:120b-cloud',
+      runId: 'run-mobile-tool-allowlist',
+      sessionId: 'mobile-session',
+      toolsEnabled: true,
+      allowedTools: ['web_search', 'rag_search'],
+      conversationMemoryEnabled: false,
+      messages: [{ role: 'user', content: 'Pesquise um assunto suficientemente detalhado.' }],
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(offered.sort(), ['rag_search', 'web_search']);
+  assert.equal(offered.includes('terminal_run'), false);
+  assert.equal(offered.includes('project_write_file'), false);
+});

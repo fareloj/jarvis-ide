@@ -229,7 +229,10 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
           // modelo reler os mesmos dados e atrasaria a resposta com uma tool.
           tools: options.toolsEnabled === false
             ? undefined
-            : tools.publicDefinitions({ exclude: memoryContextAvailable ? ['memory_list'] : [] }),
+            : tools.publicDefinitions({ exclude: memoryContextAvailable ? ['memory_list'] : [] }).filter((definition) => (
+              !Array.isArray(options.allowedTools)
+              || options.allowedTools.includes(definition.function.name)
+            )),
         }),
         signal: AbortSignal.any([runSignal, AbortSignal.timeout(Math.min(180_000, Math.max(1, deadline - Date.now())))]),
       });
@@ -825,6 +828,7 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
           projectPath: body.projectPath,
           corpus: body.corpus,
           toolsEnabled: body.toolsEnabled,
+          allowedTools: body.allowedTools,
           bypassCommands: body.bypassCommands === true,
           memoryContextIncluded: body.memoryContextIncluded,
           sessionId: body.sessionId,

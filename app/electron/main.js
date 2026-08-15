@@ -5,6 +5,8 @@ const { EVENT_TYPES, createRunEvent } = require('../backend/protocol');
 const { defaultPtyManager } = require('../backend/pty-manager');
 
 const OLLAMA_ORIGIN = 'https://ollama.com';
+let backend = null;
+let mobileGateway = null;
 
 // Toda conversa com o backend passa por aqui para carregar o token de
 // autenticacao. O token vive apenas no processo principal: o preload nao o
@@ -25,7 +27,6 @@ app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('disable-http-cache');
 
 let mainWindow;
-let backend;
 const activeChatRequests = new Map();
 const activeSearchRequests = new Map();
 
@@ -745,6 +746,11 @@ app.whenReady().then(async () => {
     const { startBackend } = require('../backend/server');
     backend = await startBackend();
     console.log(`Backend rodando em ${backend.url}`);
+    if (process.env.JARVIS_MOBILE_ENABLED === '1') {
+      const { startMobileGateway } = require('../backend/mobile-gateway');
+      mobileGateway = await startMobileGateway({ backendUrl: backend.url, backendToken: backend.authToken });
+      console.log(`Gateway móvel rodando em ${mobileGateway.url}`);
+    }
     registerIpc();
 
     const savedCookie = loadPersistedQuotaCookie();
@@ -772,5 +778,6 @@ app.on('window-all-closed', () => {
   for (const controller of activeChatRequests.values()) controller.abort();
   activeChatRequests.clear();
   backend?.server?.close();
+  mobileGateway?.server?.close();
   if (process.platform !== 'darwin') app.quit();
 });
