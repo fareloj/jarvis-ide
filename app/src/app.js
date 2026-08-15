@@ -22,7 +22,7 @@ const BASE_SYSTEM_PROMPT = [
   '',
   'APROVAÇÕES SÃO DO USUÁRIO. Tools de escrita, terminal e delegação exigem aprovação explícita por design. Explique em uma frase o que vai rodar e por quê; nunca tente contornar a aprovação nem pressione por ela.',
   '',
-  'JOBS EM SEGUNDO PLANO. Quando terminal_run ou delegate_coding_task retornar um job em execução, registre o jobId e os identificadores fornecidos. Isso comprova que a execução começou: nunca diga depois que ela não foi executada e nunca crie uma segunda delegação para conferir progresso. Quando o usuário perguntar como está indo, use background_job_status com o jobId. Só anuncie conclusão depois de receber o estado final e o output.',
+  'JOBS EM SEGUNDO PLANO. Quando terminal_run, delegate_coding_task, continue_coding_task, review_coding_changes ou inspect_coding_agent retornar um job em execução, registre o jobId e os identificadores fornecidos. Isso comprova que a execução começou: nunca diga depois que ela não foi executada e nunca crie uma segunda delegação para conferir progresso. Quando o usuário perguntar como está indo, use background_job_status com o jobId. Só anuncie conclusão depois de receber o estado final e o output.',
   '',
   'MEMÓRIA. Você pode receber memórias persistentes do projeto e trechos recuperados de outras conversas. Use quando forem relevantes e trate-os como o que são: registro do que já foi dito, não verdade absoluta. Quando esses blocos já estiverem no contexto, responda diretamente com eles: não chame memory_list apenas para confirmar os mesmos dados. Não invente lembranças.',
   '',
@@ -2136,14 +2136,16 @@ function monitorBackgroundJob(job, { requestId, sessionId, approvalCard }) {
       const current = await bridge.tools.backgroundJob({ id: job.id });
       rememberBackgroundJob(current, sessionId);
       if (current.status === 'starting' || current.status === 'running') {
+        const needsExternalIdentity = current.agent === 'antigravity'
+          && (current.name === 'delegate_coding_task' || current.name === 'continue_coding_task');
         const identityReady = current.status === 'running'
           && Boolean(current.processId)
-          && !(current.name === 'delegate_coding_task' && current.agent === 'antigravity' && !current.externalId);
+          && !(needsExternalIdentity && !current.externalId);
         if (approvalCard?.isConnected) {
           const actions = $('.approval-actions', approvalCard);
           if (actions && identityReady) {
             const ids = [`Job ${current.id}`, `PID ${current.processId}`];
-            if (current.externalId) ids.push(`Antigravity ${current.externalId}`);
+            if (current.externalId) ids.push(`${current.label || current.agent || 'Agente'} · sessão ${current.externalId}`);
             actions.innerHTML = `<span>${escapeHtml(ids.join(' · '))}</span><button class="button compact secondary" data-cancel-background-job="${escapeHtml(current.id)}">Cancelar</button>`;
           }
           let live = $('.approval-result', approvalCard);
@@ -2192,7 +2194,7 @@ function monitorBackgroundJob(job, { requestId, sessionId, approvalCard }) {
       toast(`${current.label || 'Job'} ${label.toLowerCase()}`, current.status === 'completed'
         ? 'O output foi devolvido ao modelo.'
         : 'O estado final e a saída disponível foram devolvidos ao modelo.', current.status === 'completed' ? '' : 'error');
-      if (current.name === 'delegate_coding_task') {
+      if (current.name === 'delegate_coding_task' || current.name === 'continue_coding_task') {
         verificarMudancasExternas();
         carregarGit();
       }

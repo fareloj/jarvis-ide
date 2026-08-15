@@ -211,3 +211,60 @@ test('anexos de imagem chegam até o Ollama e mensagens sem imagem não ganham o
   assert.equal('images' in noImageMessage, false);
   assert.deepEqual(imageMessage.images, ['ZmFrZS1iYXNlNjQ=']);
 });
+
+test('primeira tentativa de tool operacional divulga a skill e so a segunda pede aprovacao', async (context) => {
+  const originalFetch = global.fetch;
+  const payloads = [];
+  global.fetch = async (url, options = {}) => {
+    if (String(url).endsWith('/api/tags')) return new Response(JSON.stringify({ models: [] }), { status: 200 });
+    if (!String(url).endsWith('/api/chat')) throw new Error(`URL inesperada no teste: ${url}`);
+    const payload = JSON.parse(options.body);
+    payloads.push(payload);
+    return new Response(`${JSON.stringify({
+      model: payload.model,
+      message: {
+        content: '',
+        tool_calls: [{
+          function: {
+            name: 'inspect_coding_agent',
+            arguments: { agent: 'codex', capability: 'version' },
+          },
+        }],
+      },
+      done: true,
+    })}\n`, { status: 200, headers: { 'Content-Type': 'application/x-ndjson' } });
+  };
+
+  const backend = await startBackend();
+  context.after(() => {
+    backend.server.close();
+    global.fetch = originalFetch;
+  });
+
+  const response = await requestText(`${backend.url}/api/chat/stream`, {
+    method: 'POST',
+    token: backend.authToken,
+    body: {
+      model: 'gpt-oss:120b-cloud',
+      runId: 'run-tool-skill-gate',
+      projectPath: os.tmpdir(),
+      activeSkills: [],
+      messages: [{ role: 'user', content: 'Qual versao do Codex esta instalada?' }],
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(payloads.length, 2, 'a skill deve voltar ao modelo antes da segunda tool call');
+  const disclosed = payloads[1].messages.find((message) => (
+    message.role === 'tool' && String(message.content).includes('skill_loaded')
+  ));
+  assert.ok(disclosed);
+  assert.match(disclosed.content, /inspect-coding-agent/);
+  assert.match(disclosed.content, /Escolher capacidade suportada/);
+
+  const events = response.body.trim().split('\n').map((line) => JSON.parse(line));
+  const toolResults = events.filter((event) => event.type === 'tool.result');
+  assert.equal(toolResults.length, 1);
+  assert.equal(toolResults[0].payload.skillDisclosure, true);
+  assert.ok(events.some((event) => event.type === 'approval.required'));
+});

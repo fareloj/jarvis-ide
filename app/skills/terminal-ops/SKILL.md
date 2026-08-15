@@ -1,8 +1,32 @@
 ---
 id: terminal-ops
 name: Comandos de terminal
-description: Executa comandos PowerShell no projeto aberto quando necessário, sempre com aprovação explícita.
+description: Executar um comando PowerShell isolado no workspace, com aprovação, timeout, output incremental e encerramento da árvore de processos. Usar para testes, builds, lint, instalação local ou diagnóstico que não possua uma tool mais específica.
 ---
-Use `terminal_run` só quando for realmente necessário rodar um comando pra responder ou concluir a tarefa (instalar dependência, rodar testes, listar algo que as outras tools não cobrem). Todo uso desta tool exige aprovação explícita do usuário antes de executar — isso já é garantido pelo próprio sistema, então não tente convencer o usuário a pular a aprovação nem sugira formas de contornar isso.
 
-Antes de pedir a execução, explique em uma frase o que o comando faz e por que é necessário. Prefira comandos read-only (listar, verificar versão, rodar testes) a comandos que alteram o sistema (instalar pacotes globais, deletar arquivos, mudar configuração). Nunca rode comandos que o usuário não pediu nem que sejam óbvios pela tarefa em andamento.
+# Executar terminal com segurança
+
+Usar `terminal_run` apenas quando uma tool mais específica não cobrir a operação. Explicar em uma frase o que será executado e por quê.
+
+## Preparar o comando
+
+- Preferir um comando curto, determinístico e limitado ao projeto.
+- Usar caminhos literais ou relativos ao workspace; não depender de diretório implícito desconhecido.
+- Não encadear tarefas independentes em uma linha. Executar e validar cada etapa separadamente.
+- Não iniciar processos interativos que esperem entrada invisível.
+- Não executar servidores permanentes como comando foreground.
+- Nunca incluir segredos na linha de comando.
+
+## Escolher timeout
+
+- 15–60 segundos: inspeção, lint ou testes pequenos.
+- 120–300 segundos: builds, instalação local e suites médias.
+- até 900 segundos: somente quando houver justificativa concreta.
+
+Timeout não significa sucesso parcial. Quando ocorrer, a árvore de processos é encerrada e o modelo deve receber o output produzido até então.
+
+## Acompanhar
+
+Após aprovação, `terminal_run` retorna um job. Guardar o `job_id` e usar `background_job_status`; não executar o comando novamente para conferir. Só afirmar sucesso quando o estado for `completed`, `exitCode` for zero e o output confirmar o objetivo. Em `failed`, `timeout` ou `cancelled`, relatar stderr, código de saída e evidência parcial sem inventar causa.
+
+O modo bypass remove a aprovação por comando, mas não remove confinamento, bloqueios de segurança, timeout nem a obrigação de verificar o resultado.

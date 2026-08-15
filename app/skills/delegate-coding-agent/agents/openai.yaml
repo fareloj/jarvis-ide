@@ -1,0 +1,4 @@
+interface:
+  display_name: "Delegar para agente de código"
+  short_description: "Inicia tarefas isoladas com outro agente"
+  default_prompt: "Use $delegate-coding-agent para delegar esta tarefa com segurança ao agente adequado."

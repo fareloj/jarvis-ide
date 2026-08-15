@@ -1,0 +1,4 @@
+interface:
+  display_name: "Revisar com agente de código"
+  short_description: "Executa revisão especializada e verificável"
+  default_prompt: "Use $review-with-coding-agent para revisar estas alterações com o agente adequado."

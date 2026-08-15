@@ -1,0 +1,4 @@
+interface:
+  display_name: "Controlar tarefa em segundo plano"
+  short_description: "Consulta e cancela jobs sem duplicá-los"
+  default_prompt: "Use $control-background-job para acompanhar ou cancelar esta tarefa em segundo plano."

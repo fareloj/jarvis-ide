@@ -8,6 +8,7 @@ const { listMemories, saveMemory } = require('./memory-store');
 const { searchWeb } = require('./web-search');
 const fileWrite = require('./file-write');
 const commandPolicy = require('./command-policy');
+const codingAgents = require('./coding-agent-cli');
 
 const execFileAsync = promisify(execFile);
 const pendingApprovals = new Map();
@@ -171,8 +172,69 @@ const DEFINITIONS = Object.freeze([
           agent: { type: 'string', enum: ['claude-code', 'codex', 'antigravity'], description: 'Qual agente de codificação usar.' },
           prompt: { type: 'string', description: 'A tarefa a delegar, em texto claro e autocontido.' },
           timeout_seconds: { type: 'integer', minimum: 30, maximum: 3600, description: 'Timeout entre 30 segundos e 1 hora. O padrão é 30 minutos.' },
+          mode: { type: 'string', enum: ['plan', 'edit'], description: 'plan apenas analisa; edit permite alterar o workspace.' },
+          effort: { type: 'string', enum: ['low', 'medium', 'high'], description: 'Esforco de raciocinio quando suportado.' },
+          model: { type: 'string', description: 'Modelo opcional aceito pela CLI escolhida.' },
         },
         required: ['agent', 'prompt'],
+      },
+    },
+    policy: { risk: 'execute', approval: 'always' },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'continue_coding_task',
+      description: 'Continua uma sessao existente do Claude Code, Codex ou Antigravity pelo ID nativo retornado anteriormente. Nao use para consultar um job ainda em execucao.',
+      parameters: {
+        type: 'object',
+        properties: {
+          agent: { type: 'string', enum: ['claude-code', 'codex', 'antigravity'] },
+          session_id: { type: 'string', description: 'conversation_id, session_id ou thread_id retornado pela CLI.' },
+          prompt: { type: 'string', description: 'Nova instrucao para a mesma sessao.' },
+          timeout_seconds: { type: 'integer', minimum: 30, maximum: 3600 },
+          mode: { type: 'string', enum: ['plan', 'edit'] },
+          effort: { type: 'string', enum: ['low', 'medium', 'high'] },
+          model: { type: 'string' },
+        },
+        required: ['agent', 'session_id', 'prompt'],
+      },
+    },
+    policy: { risk: 'execute', approval: 'always' },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'review_coding_changes',
+      description: 'Executa uma revisao read-only usando Claude Code, Codex ou Antigravity e retorna achados verificaveis. Nao implementa correcoes.',
+      parameters: {
+        type: 'object',
+        properties: {
+          agent: { type: 'string', enum: ['claude-code', 'codex', 'antigravity'] },
+          target_type: { type: 'string', enum: ['uncommitted', 'base', 'commit', 'pull-request'] },
+          target: { type: 'string', description: 'Branch, SHA ou PR quando exigido pelo target_type.' },
+          focus: { type: 'string', description: 'Riscos adicionais que a revisao deve priorizar.' },
+          ultra: { type: 'boolean', description: 'No Claude, usa ultrareview quando o alvo permitir.' },
+          timeout_seconds: { type: 'integer', minimum: 30, maximum: 3600 },
+        },
+        required: ['agent', 'target_type'],
+      },
+    },
+    policy: { risk: 'execute', approval: 'always' },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'inspect_coding_agent',
+      description: 'Executa diagnostico ou lista capacidades de uma CLI de codigo sem editar o projeto.',
+      parameters: {
+        type: 'object',
+        properties: {
+          agent: { type: 'string', enum: ['claude-code', 'codex', 'antigravity'] },
+          capability: { type: 'string', enum: ['version', 'doctor', 'models', 'agents', 'mcp', 'plugins', 'features', 'changelog'] },
+          timeout_seconds: { type: 'integer', minimum: 5, maximum: 300 },
+        },
+        required: ['agent', 'capability'],
       },
     },
     policy: { risk: 'execute', approval: 'always' },
@@ -189,6 +251,19 @@ const DEFINITIONS = Object.freeze([
       },
     },
     policy: { risk: 'read', approval: 'never' },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'cancel_background_job',
+      description: 'Cancela um terminal ou agente delegado ainda em execucao pelo job_id. Nao use em jobs concluidos.',
+      parameters: {
+        type: 'object',
+        properties: { job_id: { type: 'string', description: 'ID do job em execucao.' } },
+        required: ['job_id'],
+      },
+    },
+    policy: { risk: 'execute', approval: 'always' },
   },
 ]);
 
@@ -427,7 +502,7 @@ function runCli(binary, args, { cwd, timeoutMs, signal, onOutput, onStarted }) {
   });
 }
 
-async function delegateCodingTask(projectPath, agent, prompt, {
+async function legacyDelegateCodingTask(projectPath, agent, prompt, {
   signal, onOutput, onStarted, onMetadata, timeoutMs = DELEGATE_TIMEOUT_MS,
 } = {}) {
   const cwd = path.resolve(String(projectPath || ''));
@@ -501,7 +576,8 @@ async function delegateCodingTask(projectPath, agent, prompt, {
         '--output-format', 'stream-json',
         '--add-dir', cwd,
         '--print-timeout', `${Math.ceil(timeoutMs / 1000)}s`,
-        '--dangerously-skip-permissions',
+        '--sandbox',
+        '--mode', 'accept-edits',
       ], {
         cwd, timeoutMs: timeoutMs + 5_000, signal, onStarted,
         onOutput: (stream, chunk) => {
@@ -536,6 +612,90 @@ async function delegateCodingTask(projectPath, agent, prompt, {
   }
 
   throw new Error(`Agente de codificação desconhecido: ${agent}`);
+}
+
+async function executeCodingAgentInvocation(projectPath, agent, invocation, {
+  signal, onOutput, onStarted, onMetadata, timeoutMs = DELEGATE_TIMEOUT_MS,
+} = {}) {
+  const cwd = path.resolve(String(projectPath || ''));
+  const parser = invocation.format === 'stream-json' || invocation.format === 'jsonl'
+    ? codingAgents.createEventParser(agent, onMetadata)
+    : null;
+  try {
+    const processTimeoutMs = agent === 'antigravity' ? timeoutMs + 5_000 : timeoutMs;
+    const { stdout } = await runCli(invocation.binary, invocation.args, {
+      cwd, timeoutMs: processTimeoutMs, signal, onStarted,
+      onOutput: (stream, chunk) => {
+        onOutput?.(stream, chunk);
+        if (stream === 'stdout') parser?.push(chunk);
+      },
+    });
+    const parsed = parser?.finish() || {};
+    let result = parsed.finalText || '';
+    if (invocation.outputFile) result = await fs.readFile(invocation.outputFile, 'utf8').catch(() => result);
+    if (!result && invocation.format === 'json') {
+      try {
+        const payload = JSON.parse(stdout);
+        result = String(payload.result || payload.response || JSON.stringify(payload));
+      } catch { result = stdout; }
+    }
+    if (!result && invocation.format === 'text') result = stdout;
+    if (parsed.finalStatus === 'ERROR') throw Object.assign(new Error('A CLI encerrou a tarefa com erro.'), { stdout });
+    return {
+      agent,
+      sessionId: parsed.sessionId || null,
+      conversationId: agent === 'antigravity' ? parsed.sessionId || null : undefined,
+      workspace: cwd,
+      result: String(result || '').trim(),
+    };
+  } catch (error) {
+    if (error.code === 'ENOENT') throw new Error(`${codingAgents.LABELS[agent]} nao esta instalado ou nao esta no PATH.`);
+    if (error.timedOut) throw Object.assign(new Error(`${codingAgents.LABELS[agent]} nao respondeu a tempo.`), { timedOut: true });
+    if (error.cancelled) throw Object.assign(new Error(`${codingAgents.LABELS[agent]} foi cancelado e sua arvore de processos foi encerrada.`), { cancelled: true });
+    const detail = (error.stderr || error.stdout || error.message || '').toString().slice(0, 4000);
+    throw new Error(`${codingAgents.LABELS[agent]} falhou: ${detail}`);
+  } finally {
+    if (invocation.outputFile) await fs.unlink(invocation.outputFile).catch(() => {});
+  }
+}
+
+async function delegateCodingTask(projectPath, agent, prompt, options = {}) {
+  const outputFile = agent === 'codex'
+    ? path.join(os.tmpdir(), `jarvis-codex-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`)
+    : null;
+  const invocation = codingAgents.buildTaskInvocation(agent, {
+    cwd: projectPath, prompt, timeoutMs: options.timeoutMs, model: options.model,
+    effort: options.effort, mode: options.mode, outputFile,
+  });
+  return executeCodingAgentInvocation(projectPath, agent, invocation, options);
+}
+
+async function continueCodingTask(projectPath, agent, sessionId, prompt, options = {}) {
+  if (!String(sessionId || '').trim()) throw new Error('O ID da sessao e obrigatorio para continuar uma tarefa.');
+  const outputFile = agent === 'codex'
+    ? path.join(os.tmpdir(), `jarvis-codex-resume-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`)
+    : null;
+  const invocation = codingAgents.buildTaskInvocation(agent, {
+    cwd: projectPath, prompt, sessionId, timeoutMs: options.timeoutMs, model: options.model,
+    effort: options.effort, mode: options.mode, outputFile,
+  });
+  return executeCodingAgentInvocation(projectPath, agent, invocation, options);
+}
+
+async function reviewCodingChanges(projectPath, agent, args, options = {}) {
+  const outputFile = agent === 'codex'
+    ? path.join(os.tmpdir(), `jarvis-codex-review-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`)
+    : null;
+  const invocation = codingAgents.buildReviewInvocation(agent, {
+    cwd: projectPath, targetType: args.target_type, target: args.target, focus: args.focus,
+    ultra: args.ultra === true, timeoutMs: options.timeoutMs, outputFile,
+  });
+  return executeCodingAgentInvocation(projectPath, agent, invocation, options);
+}
+
+async function inspectCodingAgent(projectPath, agent, capability, options = {}) {
+  const invocation = codingAgents.buildInspectionInvocation(agent, capability);
+  return executeCodingAgentInvocation(projectPath, agent, invocation, options);
 }
 
 async function runTool(name, args = {}, context = {}) {
@@ -578,12 +738,50 @@ async function runTool(name, args = {}, context = {}) {
       onStarted: context.onStarted,
       onMetadata: context.onMetadata,
       timeoutMs: Math.max(30_000, Math.min(3_600_000, (Number(args.timeout_seconds) || 1800) * 1_000)),
+      mode: args.mode || 'edit',
+      effort: args.effort || 'medium',
+      model: args.model,
+    });
+  }
+  if (name === 'continue_coding_task') {
+    return continueCodingTask(projectPath, args.agent, args.session_id, args.prompt, {
+      signal: context.signal,
+      onOutput: context.onOutput,
+      onStarted: context.onStarted,
+      onMetadata: context.onMetadata,
+      timeoutMs: Math.max(30_000, Math.min(3_600_000, (Number(args.timeout_seconds) || 1800) * 1_000)),
+      mode: args.mode || 'edit',
+      effort: args.effort || 'medium',
+      model: args.model,
+    });
+  }
+  if (name === 'review_coding_changes') {
+    return reviewCodingChanges(projectPath, args.agent, args, {
+      signal: context.signal,
+      onOutput: context.onOutput,
+      onStarted: context.onStarted,
+      onMetadata: context.onMetadata,
+      timeoutMs: Math.max(30_000, Math.min(3_600_000, (Number(args.timeout_seconds) || 1800) * 1_000)),
+    });
+  }
+  if (name === 'inspect_coding_agent') {
+    return inspectCodingAgent(projectPath, args.agent, args.capability, {
+      signal: context.signal,
+      onOutput: context.onOutput,
+      onStarted: context.onStarted,
+      onMetadata: context.onMetadata,
+      timeoutMs: Math.max(5_000, Math.min(300_000, (Number(args.timeout_seconds) || 30) * 1_000)),
     });
   }
   if (name === 'background_job_status') {
     const job = getBackgroundJob(args.job_id);
     if (!job) throw new Error('Job em segundo plano não encontrado ou expirado.');
     return job;
+  }
+  if (name === 'cancel_background_job') {
+    const cancelled = await cancelBackgroundJob(args.job_id);
+    if (!cancelled) throw new Error('Job nao encontrado, expirado ou ja encerrado.');
+    return { job_id: String(args.job_id), cancelled: true };
   }
   // As tools de escrita nunca chegam aqui pelo caminho normal: elas sao
   // aplicadas a partir do plano congelado em resolveApproval. Este ramo
@@ -599,6 +797,9 @@ async function runTool(name, args = {}, context = {}) {
 // execução e o renderer entrega o estado final ao modelo quando o job fecha.
 const backgroundJobs = new Map();
 const JOB_OUTPUT_LIMIT = 500_000;
+const CODING_AGENT_JOB_TOOLS = new Set([
+  'delegate_coding_task', 'continue_coding_task', 'review_coding_changes', 'inspect_coding_agent',
+]);
 
 function publicBackgroundJob(job) {
   if (!job) return null;
@@ -629,7 +830,7 @@ function startBackgroundJob(pending, runner = runTool) {
     id,
     name: pending.name,
     agent: pending.args.agent || null,
-    label: pending.name === 'delegate_coding_task'
+    label: CODING_AGENT_JOB_TOOLS.has(pending.name)
       ? (DELEGATE_LABELS[pending.args.agent] || pending.args.agent)
       : 'Terminal',
     status: 'starting',
@@ -763,7 +964,7 @@ async function resolveApproval(id, approved) {
     : null;
   if (!approved) return { status: 'denied', name: pending.name, _runtime: runtime };
 
-  if (pending.name === 'terminal_run' || pending.name === 'delegate_coding_task') {
+  if (pending.name === 'terminal_run' || CODING_AGENT_JOB_TOOLS.has(pending.name)) {
     return { status: 'background', name: pending.name, job: startBackgroundJob(pending), _runtime: runtime };
   }
 
@@ -782,7 +983,10 @@ module.exports = {
   cancelTerminalJob,
   getBackgroundJob,
   getTerminalJob,
+  continueCodingTask,
   delegateCodingTask,
+  inspectCodingAgent,
+  reviewCodingChanges,
   fileWrite, describeTools,
   runCli, listProjectDirectory, previewProjectFile, publicDefinitions,
   requestTool, resolveApproval, resolveProjectTarget, runTool,

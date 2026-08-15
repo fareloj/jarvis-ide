@@ -125,6 +125,44 @@ test('terminal aprovado vira job em segundo plano e preserva o output final', { 
   await fs.rm(root, { recursive: true, force: true });
 });
 
+test('tools de agentes possuem contratos tipados e exigem aprovacao', async () => {
+  const names = publicDefinitions().map((item) => item.function.name);
+  for (const name of ['continue_coding_task', 'review_coding_changes', 'inspect_coding_agent', 'cancel_background_job']) {
+    assert.ok(names.includes(name), `${name} deve estar registrada`);
+  }
+
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-agent-tools-'));
+  const calls = [
+    ['continue_coding_task', { agent: 'codex', session_id: 'thread-1', prompt: 'Continue' }],
+    ['review_coding_changes', { agent: 'codex', target_type: 'uncommitted' }],
+    ['inspect_coding_agent', { agent: 'codex', capability: 'version' }],
+  ];
+  for (const [name, args] of calls) {
+    const outcome = await requestTool(name, args, { projectPath: root });
+    assert.equal(outcome.status, 'approval_required');
+    assert.equal(outcome.approval.name, name);
+    await resolveApproval(outcome.approval.id, false);
+  }
+  await fs.rm(root, { recursive: true, force: true });
+});
+
+test('cancel_background_job encerra apenas um job ativo conhecido', async () => {
+  const job = startBackgroundJob({
+    name: 'delegate_coding_task', args: { agent: 'codex', prompt: 'aguarde' }, context: {},
+  }, async (_name, _args, context) => new Promise((resolve, reject) => {
+    context.onStarted({ pid: 4321, cwd: os.tmpdir() });
+    context.signal.addEventListener('abort', () => reject(Object.assign(new Error('cancelado'), { cancelled: true })), { once: true });
+  }));
+
+  const pending = await requestTool('cancel_background_job', { job_id: job.id }, {});
+  assert.equal(pending.status, 'approval_required');
+  const cancelled = await resolveApproval(pending.approval.id, true);
+  assert.equal(cancelled.result.cancelled, true);
+
+  await new Promise((resolve) => { setTimeout(resolve, 20); });
+  assert.equal(getBackgroundJob(job.id).status, 'cancelled');
+});
+
 test('job de terminal publica timeout e a saída parcial', { skip: !ehWindows }, async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-terminal-timeout-job-'));
   const pending = await requestTool('terminal_run', {

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Inspecionar agente de código"
+  short_description: "Diagnostica CLIs e lista capacidades"
+  default_prompt: "Use $inspect-coding-agent para diagnosticar a CLI ou listar suas capacidades."

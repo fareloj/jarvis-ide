@@ -3,6 +3,19 @@ const path = require('node:path');
 
 const SKILLS_ROOT = path.resolve(__dirname, '..', 'skills');
 
+// Tools com efeito operacional exigem que o modelo receba primeiro um
+// procedimento especifico. O primeiro tool call apenas divulga a skill; uma
+// chamada posterior, ja com as instrucoes no historico, pode executar.
+const TOOL_SKILL_REQUIREMENTS = Object.freeze({
+  terminal_run: 'terminal-ops',
+  delegate_coding_task: 'delegate-coding-agent',
+  continue_coding_task: 'continue-coding-agent',
+  review_coding_changes: 'review-with-coding-agent',
+  inspect_coding_agent: 'inspect-coding-agent',
+  background_job_status: 'control-background-job',
+  cancel_background_job: 'control-background-job',
+});
+
 function parseSkill(markdown, directoryName) {
   const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
   const metadata = {};
@@ -41,6 +54,22 @@ async function listSkills() {
   return skills;
 }
 
+async function loadSkill(id) {
+  const skillId = String(id || '').trim();
+  if (!skillId) return null;
+  try {
+    const markdown = await fs.readFile(path.join(SKILLS_ROOT, skillId, 'SKILL.md'), 'utf8');
+    return parseSkill(markdown, skillId);
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+function requiredSkillForTool(toolName) {
+  return TOOL_SKILL_REQUIREMENTS[String(toolName || '')] || null;
+}
+
 async function loadActiveSkills(ids = []) {
   const selected = new Set(Array.isArray(ids) ? ids.map(String) : []);
   return (await listSkills()).filter((skill) => selected.has(skill.id));
@@ -53,5 +82,14 @@ function formatSkillsForPrompt(skills) {
   )).join('\n\n')}`;
 }
 
-module.exports = { SKILLS_ROOT, formatSkillsForPrompt, listSkills, loadActiveSkills, parseSkill };
+module.exports = {
+  SKILLS_ROOT,
+  TOOL_SKILL_REQUIREMENTS,
+  formatSkillsForPrompt,
+  listSkills,
+  loadActiveSkills,
+  loadSkill,
+  parseSkill,
+  requiredSkillForTool,
+};
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Continuar agente de código"
+  short_description: "Retoma uma sessão sem perder contexto"
+  default_prompt: "Use $continue-coding-agent para continuar uma delegação existente pela mesma sessão."

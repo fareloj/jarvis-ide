@@ -4,7 +4,9 @@ const { EVENT_TYPES, createRunEvent } = require('./protocol');
 const rag = require('./rag-client');
 const { listCorpusDocuments, saveNote, stageProject } = require('./workspace-indexer');
 const { formatMemoriesForPrompt, listMemories, saveMemory } = require('./memory-store');
-const { formatSkillsForPrompt, listSkills, loadActiveSkills } = require('./skill-loader');
+const {
+  formatSkillsForPrompt, listSkills, loadActiveSkills, loadSkill, requiredSkillForTool,
+} = require('./skill-loader');
 const tools = require('./tool-registry');
 const quota = require('./quota-monitor');
 const conversationMemory = require('./conversation-memory');
@@ -155,6 +157,7 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
   const skillStates = await skillReview.listSkillStates();
   const activeSkills = (await loadActiveSkills(options.activeSkills))
     .filter((skill) => skillStates[skill.id]?.state !== 'archived');
+  const disclosedToolSkills = new Set(activeSkills.map((skill) => skill.id));
   skillReview.recordUsage({ skillIds: activeSkills.map((skill) => skill.id), event: 'loaded' }).catch((error) => {
     console.error('[skills] falha ao registrar uso:', error.message);
   });
@@ -275,6 +278,27 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
       let args = call.function?.arguments || {};
       if (typeof args === 'string') args = JSON.parse(args || '{}');
       emit(EVENT_TYPES.TOOL_REQUESTED, { name, args });
+
+      const requiredSkillId = requiredSkillForTool(name);
+      if (requiredSkillId && !disclosedToolSkills.has(requiredSkillId)) {
+        const requiredSkill = await loadSkill(requiredSkillId);
+        if (!requiredSkill) throw new Error(`A tool ${name} exige a skill ausente ${requiredSkillId}.`);
+        disclosedToolSkills.add(requiredSkillId);
+        skillReview.recordUsage({ skillIds: [requiredSkillId], event: 'loaded' }).catch((error) => {
+          console.error('[skills] falha ao registrar divulgacao:', error.message);
+        });
+        const disclosure = {
+          status: 'skill_loaded',
+          tool: name,
+          skill: { id: requiredSkill.id, name: requiredSkill.name, description: requiredSkill.description },
+          instructions: requiredSkill.content,
+          next_action: `Leia e siga a skill. Depois chame ${name} novamente apenas se os pre-requisitos estiverem satisfeitos.`,
+        };
+        runMetrics.toolResults += 1;
+        emit(EVENT_TYPES.TOOL_RESULT, { name, result: disclosure, skillDisclosure: true });
+        conversation.push({ role: 'tool', tool_name: name, content: JSON.stringify(disclosure) });
+        continue;
+      }
 
       // Uma tool já concluída nunca é repetida após retomada, inclusive mutações.
       const cachedExecution = await defaultCheckpointStore.hasExecutedTool(runId, name, args);
