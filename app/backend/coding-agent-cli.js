@@ -24,6 +24,13 @@ function optionalFlags(agent, { model, effort } = {}) {
   return args;
 }
 
+function codexGlobalFlags(cwd, { model, effort } = {}) {
+  const args = ['-C', path.resolve(cwd), '--ask-for-approval', 'never'];
+  if (model) args.push('--model', String(model));
+  if (effort) args.push('-c', `model_reasoning_effort="${String(effort)}"`);
+  return args;
+}
+
 function scopedPrompt(cwd, prompt) {
   return [
     `WORKSPACE OBRIGATORIO: ${path.resolve(cwd)}`,
@@ -60,11 +67,11 @@ function buildTaskInvocation(agent, {
     return {
       binary: BINARIES[agent],
       args: [
+        ...codexGlobalFlags(cwd, { model, effort }),
         ...prefix, '--json', '--skip-git-repo-check', '--output-last-message', outputFile,
         ...(sessionId
           ? ['-c', `sandbox_mode="${mode === 'plan' ? 'read-only' : 'workspace-write'}"`]
           : ['--sandbox', mode === 'plan' ? 'read-only' : 'workspace-write']),
-        ...(model ? ['--model', String(model)] : []),
       ],
       format: 'jsonl',
       outputFile,
@@ -212,5 +219,5 @@ function createEventParser(agent, onMetadata = () => {}) {
 
 module.exports = {
   AGENTS, BINARIES, LABELS, assertAgent, buildInspectionInvocation, buildReviewInvocation,
-  buildTaskInvocation, createEventParser, reviewPrompt, scopedPrompt,
+  buildTaskInvocation, codexGlobalFlags, createEventParser, reviewPrompt, scopedPrompt,
 };

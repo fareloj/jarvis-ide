@@ -23,6 +23,13 @@ test('inicia cada CLI em modo estruturado e confinado', () => {
   const codex = buildTaskInvocation('codex', { cwd, prompt: 'Teste', outputFile: 'final.txt' });
   assert.ok(codex.args.includes('--json'));
   assert.ok(codex.args.includes('workspace-write'));
+  assert.deepEqual(codex.args.slice(0, 5), ['-C', path.resolve(cwd), '--ask-for-approval', 'never', 'exec']);
+
+  const codexEffort = buildTaskInvocation('codex', {
+    cwd, prompt: 'Teste', outputFile: 'final.txt', effort: 'high', model: 'gpt-5.4',
+  });
+  assert.ok(codexEffort.args.includes('model_reasoning_effort="high"'));
+  assert.ok(codexEffort.args.includes('gpt-5.4'));
 
   const claude = buildTaskInvocation('claude-code', { cwd, prompt: 'Teste' });
   assert.ok(claude.args.includes('stream-json'));
@@ -32,7 +39,7 @@ test('inicia cada CLI em modo estruturado e confinado', () => {
 test('retoma a sessao pelo identificador nativo de cada CLI', () => {
   assert.deepEqual(buildTaskInvocation('antigravity', { cwd, prompt: 'Siga', sessionId: 'agy-1' }).args.slice(0, 2), ['--conversation', 'agy-1']);
   const codex = buildTaskInvocation('codex', { cwd, prompt: 'Siga', sessionId: 'cx-1', outputFile: 'out' });
-  assert.deepEqual(codex.args.slice(0, 3), ['exec', 'resume', 'cx-1']);
+  assert.deepEqual(codex.args.slice(4, 7), ['exec', 'resume', 'cx-1']);
   assert.ok(codex.args.includes('sandbox_mode="workspace-write"'));
   assert.deepEqual(buildTaskInvocation('claude-code', { cwd, prompt: 'Siga', sessionId: 'cl-1' }).args.slice(0, 2), ['--resume', 'cl-1']);
 });

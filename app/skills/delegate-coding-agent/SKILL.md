@@ -44,7 +44,7 @@ Não mandar frases vagas como “faça funcionar” ou “termine o projeto”. 
 - `agent`: usar exatamente `antigravity`, `codex` ou `claude-code`.
 - `prompt`: enviar o briefing autocontido.
 - `mode`: usar `plan` quando nenhuma edição for autorizada; usar `edit` para implementação.
-- `effort`: omitir por padrão para a CLI escolher um valor compatível. No Antigravity, usar somente `low` ou `high` quando houver motivo; alguns modelos rejeitam `medium`. Em Claude Code, `medium` pode ser usado quando explicitamente desejado.
+- `effort`: omitir por padrão para a CLI escolher um valor compatível. No Antigravity, usar somente `low` ou `high` quando houver motivo; alguns modelos rejeitam `medium`. Em Claude Code, os níveis dependem do modelo e `low`, `medium` ou `high` são os valores portáveis expostos pela tool. No Codex, o backend converte o valor em `model_reasoning_effort`; nunca prometa que um modelo aceita determinado nível sem observar a CLI.
 - `model`: omitir para usar a configuração da CLI; informar apenas se o usuário ou a tarefa exigir um modelo específico.
 - `timeout_seconds`: usar 300–900 para tarefas pequenas, 1800 por padrão e até 3600 para tarefas grandes.
 
@@ -60,4 +60,11 @@ Após aprovação, a tool deve retornar imediatamente um job com `id`, `status`,
 - Consultar progresso com `background_job_status`, sem duplicar a delegação.
 
 Conclusão válida exige estado final e output real. Se terminar sem ID nativo, registrar essa limitação e não inventar um ID. Se houver timeout, cancelamento ou falha, informar o estado e a saída parcial; não declarar que os arquivos estão corretos sem verificá-los.
+
+## 6. Entender a fronteira de cada ambiente
+
+- O Codex recebe `-C` com o workspace, `--sandbox read-only` em planejamento ou `workspace-write` em edição, e `--ask-for-approval never` porque a aprovação já ocorreu no JARVIS. O sandbox continua sendo a fronteira efetiva.
+- O Claude Code usa `plan` ou `acceptEdits`. No Windows nativo, seu sandbox de Bash não está disponível; portanto comandos que exigem nova permissão podem ser recusados no modo não interativo. Nunca troque para `bypassPermissions` para contornar isso.
+- O Antigravity recebe `--add-dir`, `--sandbox` e o workspace também dentro do prompt. O job do JARVIS permanece responsável por timeout, cancelamento, logs e acompanhamento.
+- `claude --bg` não é usado aqui: ele não pode ser combinado com `-p`. O JARVIS mantém o processo `-p` como job em segundo plano para preservar o stream JSON, o PID, o ID nativo e o output final.
 
