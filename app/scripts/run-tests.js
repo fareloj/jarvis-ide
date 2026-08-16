@@ -14,7 +14,11 @@ if (testFiles.length === 0) {
   process.exit(1);
 }
 
-const result = spawnSync(process.execPath, ['--test', ...testFiles], {
+// Os testes de terminal abrem processos reais do PowerShell e validam timeout,
+// cancelamento e encerramento da arvore. Executar arquivos em paralelo satura o
+// runner Windows do GitHub e transforma comandos imediatos em falsos timeouts.
+// Uma unica fila deixa o resultado deterministico sem relaxar os limites testados.
+const result = spawnSync(process.execPath, ['--test', '--test-concurrency=1', ...testFiles], {
   cwd: join(__dirname, '..'),
   stdio: 'inherit',
 });
