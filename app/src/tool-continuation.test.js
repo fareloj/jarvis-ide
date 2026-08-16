@@ -44,3 +44,24 @@ test('job confirmado vivo gera uma atualização de início, não de conclusão'
   assert.match(messages.at(-1).content, /delegate-123/);
   assert.match(continuation.fallbackFor({ name: 'delegate_coding_task', status: 'running' }), /iniciada/i);
 });
+
+test('job final entrega stdout ao modelo e proíbe acompanhamento fictício', () => {
+  const messages = continuation.buildMessages({
+    baseSystemPrompt: 'base',
+    dateContext: 'data',
+    projectPath: 'C:\\projeto',
+    history: [],
+    outcome: {
+      name: 'delegate_coding_task',
+      status: 'completed',
+      result: { agent: 'antigravity', result: '' },
+      output: { stdout: '{"event":"step_update","tool_name":"write_to_file"}', stderr: '' },
+    },
+  });
+  assert.match(messages[2].content, /stdout\/stderr real/i);
+  assert.match(messages[2].content, /não diga que consultará background_job_status/i);
+  assert.match(messages[2].content, /C:\\projeto/);
+  assert.match(messages[2].content, /não o chame de workspace externo/i);
+  assert.match(messages.at(-1).content, /write_to_file/);
+  assert.match(messages.at(-1).content, /"status": "completed"/);
+});

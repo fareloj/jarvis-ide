@@ -274,6 +274,52 @@ test('primeira tentativa de tool operacional divulga a skill e so a segunda pede
   assert.ok(events.some((event) => event.type === 'approval.required'));
 });
 
+test('chamadas paralelas da mesma skill aguardam juntas antes de executar', async (context) => {
+  const originalFetch = global.fetch;
+  const payloads = [];
+  global.fetch = async (url, options = {}) => {
+    if (String(url).endsWith('/api/tags')) return new Response(JSON.stringify({ models: [] }), { status: 200 });
+    const payload = JSON.parse(options.body);
+    payloads.push(payload);
+    return new Response(`${JSON.stringify({
+      model: payload.model,
+      message: {
+        content: '',
+        tool_calls: ['codex', 'claude-code'].map((agent) => ({
+          function: { name: 'inspect_coding_agent', arguments: { agent, capability: 'version' } },
+        })),
+      },
+      done: true,
+    })}\n`, { status: 200, headers: { 'Content-Type': 'application/x-ndjson' } });
+  };
+
+  const backend = await startBackend();
+  context.after(() => {
+    backend.server.close();
+    global.fetch = originalFetch;
+  });
+  const response = await requestText(`${backend.url}/api/chat/stream`, {
+    method: 'POST',
+    token: backend.authToken,
+    body: {
+      model: 'gpt-oss:120b-cloud',
+      runId: 'run-parallel-skill-gate',
+      projectPath: os.tmpdir(),
+      activeSkills: [],
+      messages: [{ role: 'user', content: 'Inspecione os dois agentes.' }],
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(payloads.length, 2);
+  const disclosures = payloads[1].messages.filter((message) => (
+    message.role === 'tool' && String(message.content).includes('skill_loaded')
+  ));
+  assert.equal(disclosures.length, 2, 'nenhuma chamada paralela pode furar o gate da skill no mesmo turno');
+  const events = response.body.trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(events.filter((event) => event.type === 'tool.result' && event.payload.skillDisclosure).length, 2);
+  assert.equal(events.filter((event) => event.type === 'approval.required').length, 2);
+});
+
 test('allowlist remota nunca oferece tools fora do conjunto informado', async (context) => {
   const originalFetch = global.fetch;
   let offered = [];

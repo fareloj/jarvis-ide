@@ -838,6 +838,21 @@ const CODING_AGENT_JOB_TOOLS = new Set([
   'delegate_coding_task', 'continue_coding_task', 'review_coding_changes', 'inspect_coding_agent',
 ]);
 
+function normalizeContinuationArgs(args = {}, context = {}) {
+  const supplied = String(args.session_id || '').trim();
+  if (!/^session-/i.test(supplied)) return args;
+  const workspace = path.resolve(String(context.projectPath || ''));
+  const candidates = [...backgroundJobs.values()].filter((job) => (
+    job.agent === args.agent
+    && job.externalId
+    && path.resolve(String(job.workspace || '')) === workspace
+    && job.status === 'completed'
+  ));
+  const externalIds = [...new Set(candidates.map((job) => job.externalId))];
+  if (externalIds.length !== 1) return args;
+  return { ...args, session_id: externalIds[0] };
+}
+
 function publicBackgroundJob(job) {
   if (!job) return null;
   return {
@@ -961,6 +976,7 @@ async function planIfWrite(name, args, context) {
 async function requestTool(name, args, context) {
   const definition = toolDefinition(name);
   if (!definition) throw new Error(`Tool desconhecida: ${name}`);
+  if (name === 'continue_coding_task') args = normalizeContinuationArgs(args, context);
   if (definition.policy.approval === 'never') return { status: 'completed', result: await runTool(name, args, context) };
 
   if (name === 'terminal_run' && context.bypassCommands === true) {
@@ -1026,6 +1042,6 @@ module.exports = {
   reviewCodingChanges,
   fileWrite, describeTools,
   runCli, listProjectDirectory, previewProjectFile, publicDefinitions,
-  requestTool, resolveApproval, resolveProjectTarget, runTool,
+  normalizeContinuationArgs, requestTool, resolveApproval, resolveProjectTarget, runTool,
   saveProjectFile, startBackgroundJob, statProjectFile,
 };

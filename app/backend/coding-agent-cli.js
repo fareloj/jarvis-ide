@@ -35,6 +35,7 @@ function scopedPrompt(cwd, prompt) {
   return [
     `WORKSPACE OBRIGATORIO: ${path.resolve(cwd)}`,
     'Crie, leia e edite arquivos exclusivamente nesse workspace. Nao use pastas scratch externas.',
+    ...(process.platform === 'win32' ? ['No Windows, se o executor nao resolver o wrapper npm, use npm.cmd para executar scripts.'] : []),
     'Antes de concluir, execute as verificacoes relevantes e relate evidencias reais.',
     '',
     String(prompt || '').trim(),
@@ -85,6 +86,7 @@ function buildTaskInvocation(agent, {
       '-p', text, '--output-format', 'stream-json', '--add-dir', path.resolve(cwd),
       '--print-timeout', `${Math.ceil(timeoutMs / 1000)}s`, '--sandbox',
       '--mode', mode === 'plan' ? 'plan' : 'accept-edits',
+      ...(mode === 'plan' ? [] : ['--dangerously-skip-permissions']),
       ...optionalFlags(agent, { model, effort }),
     ],
     format: 'stream-json',
@@ -166,6 +168,10 @@ function createEventParser(agent, onMetadata = () => {}) {
       } else if (event.event === 'step_update') {
         sessionId = event.step_update?.conversation_id || sessionId;
         lastStep = event.step_update?.tool_name || event.step_update?.step_type || lastStep;
+        if (event.step_update?.step_type === 'agent_response' && event.step_update?.text_delta) {
+          const text = String(event.step_update.text_delta);
+          finalText = event.step_update.state === 'DONE' ? text : `${finalText}${text}`;
+        }
         onMetadata({ externalId: sessionId, lastStep, stepState: event.step_update?.state, event: 'step_update' });
       } else if (event.event === 'result') {
         const result = event.result || {};

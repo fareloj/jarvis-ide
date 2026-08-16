@@ -211,7 +211,7 @@ function rememberBackgroundJob(job, sessionId) {
 function backgroundJobsContext(sessionId = state.sessionId) {
   const jobs = [...backgroundJobSnapshots.values()].filter((job) => job.sessionId === sessionId);
   if (!jobs.length) return '';
-  return `Jobs em segundo plano conhecidos desta conversa:\n${JSON.stringify(jobs, null, 2)}\nPara consultar progresso atual, use background_job_status com jobId. Não crie outra delegação.`;
+  return `Jobs em segundo plano conhecidos desta conversa:\n${JSON.stringify(jobs, null, 2)}\nPara consultar progresso atual, use background_job_status com jobId. Para continue_coding_task.session_id, use exclusivamente externalId; nunca use o sessionId da conversa do JARVIS. Não crie outra delegação.`;
 }
 
 function syncBypassUi() {
@@ -2177,6 +2177,7 @@ function continueAfterTool(outcome, { sessionId = state.sessionId } = {}) {
       messages: toolContinuation.buildMessages({
         baseSystemPrompt: BASE_SYSTEM_PROMPT,
         dateContext: currentDateContext(),
+        projectPath: hasLocalProject() ? state.project.path : '',
         history: state.messages,
         outcome,
       }),

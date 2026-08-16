@@ -13,12 +13,15 @@ test('inicia cada CLI em modo estruturado e confinado', () => {
   assert.ok(agy.args.includes('stream-json'));
   assert.ok(agy.args.includes('--sandbox'));
   assert.ok(agy.args.includes(path.resolve(cwd)));
+  assert.ok(agy.args.includes('--dangerously-skip-permissions'));
   assert.equal(agy.args.includes('--effort'), false, 'Antigravity deve escolher effort compativel por padrao');
 
   const agyMedium = buildTaskInvocation('antigravity', { cwd, prompt: 'Teste', effort: 'medium' });
   assert.equal(agyMedium.args.includes('--effort'), false, 'medium inseguro deve ser normalizado para automatico');
   const agyHigh = buildTaskInvocation('antigravity', { cwd, prompt: 'Teste', effort: 'high' });
   assert.deepEqual(agyHigh.args.slice(-2), ['--effort', 'high']);
+  const agyPlan = buildTaskInvocation('antigravity', { cwd, prompt: 'Teste', mode: 'plan' });
+  assert.equal(agyPlan.args.includes('--dangerously-skip-permissions'), false);
 
   const codex = buildTaskInvocation('codex', { cwd, prompt: 'Teste', outputFile: 'final.txt' });
   assert.ok(codex.args.includes('--json'));
@@ -73,4 +76,14 @@ test('parser extrai ids e estados dos tres protocolos', () => {
     assert.equal(result.finalText, expectedText);
     assert.equal(result.finalStatus, 'SUCCESS');
   }
+});
+
+test('parser do Antigravity preserva resposta mesmo sem evento result', () => {
+  const parser = createEventParser('antigravity');
+  parser.push('{"event":"init","conversation_id":"a2"}\n');
+  parser.push('{"event":"step_update","step_update":{"conversation_id":"a2","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"Projeto "}}\n');
+  parser.push('{"event":"step_update","step_update":{"conversation_id":"a2","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"Projeto concluído."}}\n');
+  const result = parser.finish();
+  assert.equal(result.sessionId, 'a2');
+  assert.equal(result.finalText, 'Projeto concluído.');
 });

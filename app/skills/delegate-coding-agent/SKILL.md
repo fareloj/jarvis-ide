@@ -55,7 +55,7 @@ Após aprovação, a tool deve retornar imediatamente um job com `id`, `status`,
 - `skill_loaded` não é execução: não criou job e exige uma nova chamada da mesma tool.
 - Só afirmar que o processo iniciou depois de receber `job.id`, PID e estado `running`; isso ainda não comprova que o agente começou a editar.
 - Guardar o `job.id`; ele controla o processo atual.
-- Guardar `externalId`; ele identifica a conversa nativa que poderá ser retomada depois.
+- Guardar `externalId`; ele identifica a conversa nativa que poderá ser retomada depois. Em `continue_coding_task.session_id`, usar exatamente esse `externalId`. Nunca usar o ID do chat do JARVIS, normalmente iniciado por `session-`.
 - Não afirmar conclusão enquanto o job estiver `starting` ou `running`.
 - Consultar progresso com `background_job_status`, sem duplicar a delegação.
 
@@ -65,6 +65,6 @@ Conclusão válida exige estado final e output real. Se terminar sem ID nativo, 
 
 - O Codex recebe `-C` com o workspace, `--sandbox read-only` em planejamento ou `workspace-write` em edição, e `--ask-for-approval never` porque a aprovação já ocorreu no JARVIS. O sandbox continua sendo a fronteira efetiva.
 - O Claude Code usa `plan` ou `acceptEdits`. No Windows nativo, seu sandbox de Bash não está disponível; portanto comandos que exigem nova permissão podem ser recusados no modo não interativo. Nunca troque para `bypassPermissions` para contornar isso.
-- O Antigravity recebe `--add-dir`, `--sandbox` e o workspace também dentro do prompt. O job do JARVIS permanece responsável por timeout, cancelamento, logs e acompanhamento.
+- O Antigravity recebe `--add-dir`, `--sandbox` e o workspace também dentro do prompt. Em `edit`, a aprovação explícita do cartão do JARVIS autoriza a sessão headless com `--dangerously-skip-permissions`, evitando que comandos de teste sejam auto-negados por falta de um terminal interativo. Em `plan`, esse bypass não é usado. O job do JARVIS permanece responsável por timeout, cancelamento, logs e acompanhamento.
 - `claude --bg` não é usado aqui: ele não pode ser combinado com `-p`. O JARVIS mantém o processo `-p` como job em segundo plano para preservar o stream JSON, o PID, o ID nativo e o output final.
 

@@ -235,6 +235,7 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
   }
 
   for (let turn = 0; turn < maxTurns && !doneSent; turn += 1) {
+    const skillsDisclosedThisTurn = new Set();
     if (Date.now() >= deadline) {
       emit(EVENT_TYPES.RUN_FAILED, { error: `O agente excedeu o limite de tempo de ${maxDurationMs} ms.` });
       runFailed = true;
@@ -310,13 +311,16 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
       emit(EVENT_TYPES.TOOL_REQUESTED, { name, args });
 
       const requiredSkillId = requiredSkillForTool(name);
-      if (requiredSkillId && !disclosedToolSkills.has(requiredSkillId)) {
+      if (requiredSkillId && (!disclosedToolSkills.has(requiredSkillId) || skillsDisclosedThisTurn.has(requiredSkillId))) {
         const requiredSkill = await loadSkill(requiredSkillId);
         if (!requiredSkill) throw new Error(`A tool ${name} exige a skill ausente ${requiredSkillId}.`);
-        disclosedToolSkills.add(requiredSkillId);
-        skillReview.recordUsage({ skillIds: [requiredSkillId], event: 'loaded' }).catch((error) => {
-          console.error('[skills] falha ao registrar divulgacao:', error.message);
-        });
+        if (!disclosedToolSkills.has(requiredSkillId)) {
+          disclosedToolSkills.add(requiredSkillId);
+          skillReview.recordUsage({ skillIds: [requiredSkillId], event: 'loaded' }).catch((error) => {
+            console.error('[skills] falha ao registrar divulgacao:', error.message);
+          });
+        }
+        skillsDisclosedThisTurn.add(requiredSkillId);
         const disclosure = {
           status: 'skill_loaded',
           executed: false,

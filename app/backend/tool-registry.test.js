@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const {
-  delegateCodingTask, getBackgroundJob, getTerminalJob, listProjectDirectory, previewProjectFile, publicDefinitions, requestTool, resolveApproval,
+  delegateCodingTask, getBackgroundJob, getTerminalJob, listProjectDirectory, normalizeContinuationArgs, previewProjectFile, publicDefinitions, requestTool, resolveApproval,
   resolveProjectTarget, runCli, saveProjectFile, startBackgroundJob, statProjectFile,
 } = require('./tool-registry');
 
@@ -21,6 +21,29 @@ test('skill_view oferece descoberta progressiva sem aprovação', async () => {
   assert.equal(result.status, 'completed');
   assert.equal(result.result.skill.id, 'delegate-coding-agent');
   assert.match(result.result.skill.content, /deleg/i);
+});
+
+test('continuação troca id da conversa JARVIS pelo externalId nativo comprovado', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-native-session-'));
+  const job = startBackgroundJob({
+    name: 'delegate_coding_task',
+    args: { agent: 'antigravity', prompt: 'teste' },
+    context: { projectPath: root },
+  }, async (_name, _args, context) => {
+    context.onMetadata({ externalId: 'agy-native-123', workspace: root });
+    return { agent: 'antigravity', sessionId: 'agy-native-123', result: 'ok' };
+  });
+  for (let attempt = 0; attempt < 30 && getBackgroundJob(job.id)?.status !== 'completed'; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(getBackgroundJob(job.id)?.status, 'completed');
+  assert.equal(normalizeContinuationArgs({
+    agent: 'antigravity', session_id: 'session-jarvis-chat', prompt: 'continue',
+  }, { projectPath: root }).session_id, 'agy-native-123');
+  assert.equal(normalizeContinuationArgs({
+    agent: 'antigravity', session_id: 'external-old-session', prompt: 'continue',
+  }, { projectPath: root }).session_id, 'external-old-session');
+  await fs.rm(root, { recursive: true, force: true });
 });
 
 test('tools de arquivo permanecem confinadas ao projeto', async () => {
