@@ -883,10 +883,16 @@ app.whenReady().then(async () => {
 
     const window = createWindow();
     if (process.env.JARVIS_E2E_PROJECT && process.env.JARVIS_E2E_OUTPUT) {
-      const { runElectronE2E } = require('./e2e-runner');
+      const runnerModule = process.env.JARVIS_LIVE_ANTIGRAVITY === '1'
+        ? './live-antigravity-runner'
+        : './e2e-runner';
+      const runnerExport = process.env.JARVIS_LIVE_ANTIGRAVITY === '1'
+        ? 'runLiveAntigravityE2E'
+        : 'runElectronE2E';
+      const runner = require(runnerModule)[runnerExport];
       const startE2E = async () => {
         try {
-          await runElectronE2E(window, { projectPath: process.env.JARVIS_E2E_PROJECT, outputDirectory: process.env.JARVIS_E2E_OUTPUT });
+          await runner(window, { projectPath: process.env.JARVIS_E2E_PROJECT, outputDirectory: process.env.JARVIS_E2E_OUTPUT });
           app.exit(0);
         } catch (error) {
           console.error('Electron E2E falhou:', error);
