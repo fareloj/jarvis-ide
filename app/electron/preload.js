@@ -54,6 +54,13 @@ contextBridge.exposeInMainWorld('jarvis', {
   memory: {
     list: (payload) => ipcRenderer.invoke('memory:list', payload),
     save: (payload) => ipcRenderer.invoke('memory:save', payload),
+    update: (payload) => ipcRenderer.invoke('memory:update', payload),
+    delete: (payload) => ipcRenderer.invoke('memory:delete', payload),
+    conversationList: (payload) => ipcRenderer.invoke('memory:conversation-list', payload),
+    conversationDelete: (payload) => ipcRenderer.invoke('memory:conversation-delete', payload),
+    conversationClear: (payload) => ipcRenderer.invoke('memory:conversation-clear', payload),
+    conversationSettings: (payload) => ipcRenderer.invoke('memory:conversation-settings', payload),
+    export: (payload) => ipcRenderer.invoke('memory:export', payload),
     forgetSession: (payload) => ipcRenderer.invoke('memory:forget-session', payload),
   },
   skills: {

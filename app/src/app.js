@@ -39,6 +39,7 @@ const toolContinuationFallbacks = new Map();
 const queuedToolOutcomes = new Map();
 const backgroundJobPolls = new Map();
 const backgroundJobSnapshots = new Map();
+const memoryRecallByRequest = new Map();
 
 // Skills relevantes das 22 importadas de tiagopgr/skills-ia (categoria Código) —
 // deixa de fora as que são mais "automação de negócio" (WhatsApp, planilhas,
@@ -84,6 +85,7 @@ const state = {
   toolsEnabled: localStorage.getItem('jarvis:tools-enabled') !== 'false',
   bypassCommands: localStorage.getItem('jarvis:bypass-commands') === 'true',
   conversationMemoryEnabled: localStorage.getItem('jarvis:conversation-memory') !== 'false',
+  editingMemoryId: null,
   continuousLearningEnabled: localStorage.getItem('jarvis:continuous-learning') !== 'false',
   skillReviewBusy: false,
   projectFiles: [],
@@ -724,9 +726,27 @@ function specialPage(type) {
           <p class="eyebrow">Memória persistente</p>
           <input id="noteTitle" placeholder="Título da nota">
           <textarea id="noteContent" rows="7" placeholder="Decisões, requisitos, contexto do projeto…"></textarea>
-          <button class="button secondary" data-action="rag-save-note"><i class="ph-duotone ph-brain"></i>Salvar memória e indexar</button>
-          <p class="field-help">A memória entra nos próximos chats deste projeto e também no corpus RAG.</p>
+          <div class="memory-compose-options">
+            <label>Tipo<select id="noteKind"><option value="context">Contexto</option><option value="decision">Decisão técnica</option><option value="requirement">Requisito</option><option value="preference">Preferência</option></select></label>
+            <label>Escopo<select id="noteScope"><option value="project">Projeto</option><option value="global">Global</option><option value="session">Conversa atual</option></select></label>
+          </div>
+          <div class="memory-compose-actions"><button class="button secondary" data-action="rag-save-note"><i class="ph-duotone ph-brain"></i><span id="memorySaveLabel">Salvar memória</span></button><button class="button secondary hidden" data-action="memory-cancel-edit" id="memoryCancelEdit">Cancelar edição</button></div>
+          <p class="field-help">Memórias de projeto também podem ser indexadas no corpus; globais acompanham outros projetos e as de conversa ficam limitadas à sessão atual.</p>
+          <div class="memory-toolbar"><input id="memorySearch" placeholder="Buscar memórias"><button class="button compact secondary" data-action="memory-export"><i class="ph-duotone ph-export"></i>Exportar</button></div>
+          <div class="memory-section-heading"><strong>Memórias explícitas</strong><span id="explicitMemoryCount">0</span></div>
           <div class="memory-list" id="memoryList"></div>
+          <div class="memory-section-heading"><strong>Conversas recuperáveis</strong><button class="button compact danger-ghost" data-action="memory-clear-conversations">Limpar</button></div>
+          <div class="memory-list conversation-memory-list" id="conversationMemoryList"></div>
+          <details class="memory-settings">
+            <summary>Retenção e recuperação</summary>
+            <div class="memory-settings-grid">
+              <label>Dias de retenção<input id="memoryRetentionDays" type="number" min="1" max="3650"></label>
+              <label>Máximo de trechos<input id="memoryMaxTurns" type="number" min="100" max="20000"></label>
+              <label>Resultados por resposta<input id="memoryRecallLimit" type="number" min="1" max="10"></label>
+              <label>Similaridade mínima<input id="memoryMinScore" type="number" min="0.1" max="0.95" step="0.05"></label>
+            </div>
+            <button class="button compact secondary" data-action="memory-save-settings">Salvar limites</button>
+          </details>
         </section>
         <section class="rag-panel rag-inventory-panel">
           <div class="rag-inventory-heading"><div><p class="eyebrow">Conteúdo do corpus</p><strong id="ragInventorySummary">Carregando inventário…</strong></div><input id="ragInventoryFilter" placeholder="Filtrar arquivos indexados"></div>
@@ -1653,10 +1673,25 @@ function appendMessage(role, content, options = {}) {
     paragraph.textContent = content;
     body.append(paragraph);
   }
+  if (role === 'assistant' && Array.isArray(options.memoryRecall) && options.memoryRecall.length) {
+    attachMemoryRecall(article, options.memoryRecall);
+  }
   elements.chatFeed.append(article);
   elements.messageCount.textContent = String(1 + state.messages.length);
   requestAnimationFrame(() => { elements.chatScroll.scrollTop = elements.chatScroll.scrollHeight; });
   return article;
+}
+
+function attachMemoryRecall(article, results = []) {
+  if (!article || !results.length || $('.memory-recall-disclosure', article)) return;
+  const details = document.createElement('details');
+  details.className = 'memory-recall-disclosure';
+  details.innerHTML = `<summary><i class="ph-duotone ph-brain"></i>${results.length} memória${results.length === 1 ? '' : 's'} recuperada${results.length === 1 ? '' : 's'}</summary>
+    <div class="memory-recall-items">${results.map((item) => `
+      <article><div><strong>${escapeHtml(item.sessionTitle || 'Conversa anterior')}</strong><span>${Math.round(Number(item.score || 0) * 100)}%</span></div>
+      <small>${escapeHtml(item.reason || 'Similaridade semântica')}</small>
+      <p>${escapeHtml(item.turns?.find((turn) => turn.role === 'user')?.content || item.turns?.[0]?.content || '')}</p></article>`).join('')}</div>`;
+  $('.message-content', article)?.append(details);
 }
 
 function appendTyping() {
@@ -1695,6 +1730,7 @@ function renderSavedMessages() {
       attachmentsMeta: message.attachmentsMeta,
       messageIndex,
       branchInfo: messageBranches.infoFor(message, state.branches),
+      memoryRecall: message.memoryRecall,
     });
   });
   elements.messageCount.textContent = String(1 + state.messages.length);
@@ -1949,6 +1985,7 @@ function switchMessageBranch(branchId, step) {
 function finishChatRequest(requestId) {
   if (requestId !== state.activeRequestId) return;
   toolContinuationFallbacks.delete(requestId);
+  memoryRecallByRequest.delete(requestId);
   state.activeRequestId = null;
   setChatBusy(false);
   elements.messageCount.textContent = String(1 + state.messages.length);
@@ -1978,6 +2015,11 @@ function typingIndicator(requestId) {
 function handleChatEvent(event = {}) {
   const requestId = event.runId;
   if (!requestId || requestId !== state.activeRequestId) return;
+
+  if (event.type === 'memory.recalled') {
+    memoryRecallByRequest.set(requestId, event.payload?.results || []);
+    return;
+  }
 
   if (event.type === 'tool.requested') {
     appendToolEvent(requestId, event.payload?.name, 'Executando tool…');
@@ -2044,7 +2086,11 @@ function handleChatEvent(event = {}) {
       bubble.dataset.requestId = requestId;
     }
     bubbles.forEach((item) => item.classList.remove('streaming-message'));
-    state.messages.push({ role: 'assistant', content, time: messageStamp() });
+    const memoryRecall = memoryRecallByRequest.get(requestId) || [];
+    memoryRecallByRequest.delete(requestId);
+    const finalBubble = bubbles[bubbles.length - 1];
+    if (finalBubble) attachMemoryRecall(finalBubble, memoryRecall);
+    state.messages.push({ role: 'assistant', content, time: messageStamp(), memoryRecall });
     log(`chat · resposta recebida de ${event.payload?.model || state.model}`);
     finishChatRequest(requestId);
     scheduleQuotaRefresh();
@@ -2556,17 +2602,41 @@ async function saveKnowledgeNote() {
   }
   const title = $('#noteTitle')?.value.trim();
   const content = $('#noteContent')?.value.trim();
+  const kind = $('#noteKind')?.value || 'context';
+  const scope = $('#noteScope')?.value || 'project';
   if (!content) return;
   setRagBusy(true);
   try {
-    await bridge.memory.save({ projectPath: state.project.path, title, content, kind: 'context' });
-    const result = await bridge.rag.saveNote({ projectPath: state.project.path, title, content });
-    state.ragCorpus = result.note.corpus;
-    ragProjects[state.project.path] = { corpus: state.ragCorpus, indexedAt: new Date().toISOString() };
-    localStorage.setItem('jarvis:rag-projects', JSON.stringify(ragProjects));
+    const editing = state.editingMemoryId;
+    if (editing) {
+      await bridge.memory.update({ projectPath: state.project.path, id: editing, title, content, kind });
+    } else {
+      await bridge.memory.save({
+        projectPath: state.project.path,
+        title,
+        content,
+        kind,
+        scope,
+        sessionId: scope === 'session' ? state.sessionId : undefined,
+      });
+      if (scope === 'project') {
+        const result = await bridge.rag.saveNote({ projectPath: state.project.path, title, content });
+        state.ragCorpus = result.note.corpus;
+        ragProjects[state.project.path] = { corpus: state.ragCorpus, indexedAt: new Date().toISOString() };
+        localStorage.setItem('jarvis:rag-projects', JSON.stringify(ragProjects));
+      }
+    }
     $('#noteTitle').value = '';
     $('#noteContent').value = '';
-    toast('Memória salva', 'Ela já será usada em outros chats deste projeto.');
+    state.editingMemoryId = null;
+    $('#memorySaveLabel').textContent = 'Salvar memória';
+    $('#memoryCancelEdit')?.classList.add('hidden');
+    $('#noteScope').disabled = false;
+    toast(editing ? 'Memória atualizada' : 'Memória salva', editing
+      ? 'A nova versão será usada nas próximas respostas.'
+      : scope === 'global' ? 'Ela poderá acompanhar outros projetos.'
+        : scope === 'session' ? 'Ela ficará limitada à conversa atual.'
+          : 'Ela já será usada nos próximos chats deste projeto.');
     loadMemories();
     loadRagDocuments();
   } catch (error) {
@@ -2576,16 +2646,124 @@ async function saveKnowledgeNote() {
   }
 }
 
-async function loadMemories() {
+function beginMemoryEdit(memory) {
+  state.editingMemoryId = memory.id;
+  $('#noteTitle').value = memory.title || '';
+  $('#noteContent').value = memory.content || '';
+  $('#noteKind').value = memory.kind || 'context';
+  $('#noteScope').value = memory.scope || 'project';
+  $('#noteScope').disabled = true;
+  $('#memorySaveLabel').textContent = 'Atualizar memória';
+  $('#memoryCancelEdit')?.classList.remove('hidden');
+  $('#noteTitle').focus();
+}
+
+function cancelMemoryEdit() {
+  state.editingMemoryId = null;
+  if ($('#noteTitle')) $('#noteTitle').value = '';
+  if ($('#noteContent')) $('#noteContent').value = '';
+  if ($('#noteKind')) $('#noteKind').value = 'context';
+  if ($('#noteScope')) {
+    $('#noteScope').value = 'project';
+    $('#noteScope').disabled = false;
+  }
+  if ($('#memorySaveLabel')) $('#memorySaveLabel').textContent = 'Salvar memória';
+  $('#memoryCancelEdit')?.classList.add('hidden');
+}
+
+async function deleteExplicitMemory(id) {
+  const confirmed = await confirmDialog({
+    title: 'Apagar memória?',
+    message: 'Ela deixará de entrar no contexto das próximas respostas. Esta ação não pode ser desfeita.',
+    confirmLabel: 'Apagar memória',
+    danger: true,
+  });
+  if (!confirmed) return;
+  await bridge.memory.delete({ projectPath: state.project.path, id });
+  if (state.editingMemoryId === id) cancelMemoryEdit();
+  toast('Memória apagada', 'O registro explícito foi removido.');
+  await loadMemories();
+}
+
+async function deleteConversationMemory(id) {
+  const confirmed = await confirmDialog({
+    title: 'Esquecer esta troca?',
+    message: 'A pergunta e a resposta vinculadas deixarão de ser recuperadas em outros chats.',
+    confirmLabel: 'Esquecer',
+    danger: true,
+  });
+  if (!confirmed) return;
+  const result = await bridge.memory.conversationDelete({ projectPath: state.project.path, id });
+  toast('Trecho esquecido', `${result.removed || 0} registro(s) removido(s).`);
+  await loadMemories();
+}
+
+async function clearConversationMemory() {
+  const payload = await bridge.memory.conversationList({ projectPath: state.project.path, limit: 1000 });
+  const count = payload.records?.length || 0;
+  if (!count) {
+    toast('Memória vazia', 'Não há conversas recuperáveis neste projeto.');
+    return;
+  }
+  const confirmed = await confirmDialog({
+    title: 'Limpar memória entre conversas?',
+    message: `Serão removidos <strong>${count} trechos</strong> deste projeto. Memórias explícitas não serão afetadas.`,
+    confirmLabel: 'Limpar tudo',
+    danger: true,
+  });
+  if (!confirmed) return;
+  const result = await bridge.memory.conversationClear({ projectPath: state.project.path });
+  toast('Memória limpa', `${result.removed || 0} trechos removidos.`);
+  await loadMemories();
+}
+
+async function exportProjectMemory() {
+  const result = await bridge.memory.export({ projectPath: state.project.path });
+  if (!result.cancelled) toast('Memórias exportadas', result.filePath);
+}
+
+async function saveMemorySettings() {
+  const settings = await bridge.memory.conversationSettings({
+    projectPath: state.project.path,
+    update: true,
+    retentionDays: Number($('#memoryRetentionDays')?.value),
+    maxTurns: Number($('#memoryMaxTurns')?.value),
+    recallLimit: Number($('#memoryRecallLimit')?.value),
+    minRecallScore: Number($('#memoryMinScore')?.value),
+  });
+  toast('Limites atualizados', `Retenção de ${settings.retentionDays} dias e até ${settings.maxTurns} trechos.`);
+  await loadMemories();
+}
+
+async function loadMemories(query = $('#memorySearch')?.value || '') {
   const target = $('#memoryList');
+  const conversationTarget = $('#conversationMemoryList');
   if (!target || !hasLocalProject()) return;
   try {
-    const payload = await bridge.memory.list({ projectPath: state.project.path });
-    target.innerHTML = (payload.memories || []).slice(0, 6).map((memory) => `
-      <article class="memory-card"><strong>${escapeHtml(memory.title)}</strong><small>${escapeHtml(memory.kind)}</small><p>${escapeHtml(memory.content)}</p></article>`).join('')
+    const [payload, conversationPayload, settings] = await Promise.all([
+      bridge.memory.list({ projectPath: state.project.path, query, sessionId: state.sessionId }),
+      bridge.memory.conversationList({ projectPath: state.project.path, query, limit: 200 }),
+      bridge.memory.conversationSettings({ projectPath: state.project.path }),
+    ]);
+    const memories = payload.memories || [];
+    const records = conversationPayload.records || [];
+    if ($('#explicitMemoryCount')) $('#explicitMemoryCount').textContent = String(memories.length);
+    target.innerHTML = memories.map((memory) => `
+      <article class="memory-card" data-memory-card="${escapeHtml(memory.id)}"><div class="memory-card-heading"><span><strong>${escapeHtml(memory.title)}</strong><small>${escapeHtml(memory.scope)} · ${escapeHtml(memory.kind)}</small></span><span class="memory-card-actions"><button data-memory-edit="${escapeHtml(memory.id)}" title="Editar"><i class="ph-duotone ph-pencil-simple"></i></button><button data-memory-delete="${escapeHtml(memory.id)}" title="Apagar"><i class="ph-duotone ph-trash"></i></button></span></div><p>${escapeHtml(memory.content)}</p></article>`).join('')
       || '<p class="empty-copy">Nenhuma memória salva.</p>';
+    target._memories = memories;
+    if (conversationTarget) {
+      conversationTarget.innerHTML = records.map((record) => `
+        <article class="memory-card conversation-memory-card"><div class="memory-card-heading"><span><strong>${escapeHtml(record.sessionTitle || 'Conversa')}</strong><small>${escapeHtml(record.role)} · ${escapeHtml(dateLabel(record.createdAt))}</small></span><button data-conversation-memory-delete="${escapeHtml(record.id)}" title="Esquecer"><i class="ph-duotone ph-trash"></i></button></div><p>${escapeHtml(record.content)}</p></article>`).join('')
+        || '<p class="empty-copy">Nenhum trecho de conversa recuperável.</p>';
+    }
+    if ($('#memoryRetentionDays')) $('#memoryRetentionDays').value = String(settings.retentionDays);
+    if ($('#memoryMaxTurns')) $('#memoryMaxTurns').value = String(settings.maxTurns);
+    if ($('#memoryRecallLimit')) $('#memoryRecallLimit').value = String(settings.recallLimit);
+    if ($('#memoryMinScore')) $('#memoryMinScore').value = String(settings.minRecallScore);
   } catch (error) {
     target.textContent = error.message;
+    if (conversationTarget) conversationTarget.textContent = error.message;
   }
 }
 
@@ -3348,6 +3526,25 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  const memoryEditTarget = event.target.closest('[data-memory-edit]');
+  if (memoryEditTarget) {
+    const memory = ($('#memoryList')?._memories || []).find((item) => item.id === memoryEditTarget.dataset.memoryEdit);
+    if (memory) beginMemoryEdit(memory);
+    return;
+  }
+
+  const memoryDeleteTarget = event.target.closest('[data-memory-delete]');
+  if (memoryDeleteTarget) {
+    await deleteExplicitMemory(memoryDeleteTarget.dataset.memoryDelete);
+    return;
+  }
+
+  const conversationMemoryDeleteTarget = event.target.closest('[data-conversation-memory-delete]');
+  if (conversationMemoryDeleteTarget) {
+    await deleteConversationMemory(conversationMemoryDeleteTarget.dataset.conversationMemoryDelete);
+    return;
+  }
+
   const target = event.target.closest('button, [data-view], [data-nav], [data-action]');
   if (!target) return;
 
@@ -3581,6 +3778,10 @@ document.addEventListener('click', async (event) => {
   if (action === 'rag-index') indexCurrentProject();
   if (action === 'rag-search') searchKnowledge();
   if (action === 'rag-save-note') saveKnowledgeNote();
+  if (action === 'memory-cancel-edit') cancelMemoryEdit();
+  if (action === 'memory-export') exportProjectMemory();
+  if (action === 'memory-clear-conversations') clearConversationMemory();
+  if (action === 'memory-save-settings') saveMemorySettings();
 });
 
 document.addEventListener('submit', async (event) => {
@@ -3612,6 +3813,7 @@ document.addEventListener('change', (event) => {
 document.addEventListener('input', (event) => {
   if (event.target.id === 'projectFileFilter') renderProjectFiles(event.target.value);
   if (event.target.id === 'ragInventoryFilter') renderRagInventory(event.target.value);
+  if (event.target.id === 'memorySearch') loadMemories(event.target.value);
   if (event.target.id === 'globalSearchInput' || event.target.id === 'mainSearchInput') {
     state.searchQuery = event.target.value;
   }

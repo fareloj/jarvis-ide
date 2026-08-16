@@ -425,6 +425,46 @@ function registerIpc() {
     if (!response.ok) throw new Error(data.error || 'Falha ao salvar a memória.');
     return data;
   });
+  const memoryPost = (channel, route, fallback) => {
+    ipcMain.handle(channel, async (_event, payload) => {
+      const response = await backendFetch(route, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || fallback);
+      return data;
+    });
+  };
+  memoryPost('memory:update', '/api/memory/update', 'Falha ao atualizar a memória.');
+  memoryPost('memory:delete', '/api/memory/delete', 'Falha ao apagar a memória.');
+  memoryPost('memory:conversation-list', '/api/memory/conversation/list', 'Falha ao listar a memória entre conversas.');
+  memoryPost('memory:conversation-delete', '/api/memory/conversation/delete', 'Falha ao apagar o trecho de conversa.');
+  memoryPost('memory:conversation-clear', '/api/memory/conversation/clear', 'Falha ao limpar a memória entre conversas.');
+  memoryPost('memory:conversation-settings', '/api/memory/conversation/settings', 'Falha ao configurar a memória entre conversas.');
+  ipcMain.handle('memory:export', async (_event, payload) => {
+    const [explicitResponse, conversationResponse] = await Promise.all([
+      backendFetch('/api/memory/export', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+      }),
+      backendFetch('/api/memory/conversation/export', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+      }),
+    ]);
+    const explicit = await explicitResponse.json();
+    const conversations = await conversationResponse.json();
+    if (!explicitResponse.ok || !conversationResponse.ok) {
+      throw new Error(explicit.error || conversations.error || 'Falha ao exportar memórias.');
+    }
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Exportar memórias do JARVIS',
+      defaultPath: `jarvis-memory-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePath) return { cancelled: true };
+    const document = { version: 1, exportedAt: new Date().toISOString(), explicit, conversations };
+    await fs.promises.writeFile(result.filePath, `${JSON.stringify(document, null, 2)}\n`, 'utf8');
+    return { cancelled: false, filePath: result.filePath };
+  });
   ipcMain.handle('skills:list', async () => {
     const response = await backendFetch('/api/skills');
     return response.json();

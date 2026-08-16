@@ -13,3 +13,10 @@ test('evento do runtime usa envelope estável', () => {
 test('evento rejeita tipo fora do protocolo', () => {
   assert.throws(() => createRunEvent('run-123', 'tool.magic'), /Evento desconhecido/);
 });
+
+test('evento de memória recuperada preserva evidência para a interface', () => {
+  const results = [{ score: 0.81, sessionTitle: 'Preferências', reason: 'Similaridade semântica' }];
+  const event = createRunEvent('run-memory', EVENT_TYPES.MEMORY_RECALLED, { results });
+  assert.equal(event.type, 'memory.recalled');
+  assert.deepEqual(event.payload.results, results);
+});

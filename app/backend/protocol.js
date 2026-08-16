@@ -1,6 +1,7 @@
 const EVENT_TYPES = Object.freeze({
   MESSAGE_DELTA: 'message.delta',
   MESSAGE_DONE: 'message.done',
+  MEMORY_RECALLED: 'memory.recalled',
   TOOL_REQUESTED: 'tool.requested',
   TOOL_RESULT: 'tool.result',
   APPROVAL_REQUIRED: 'approval.required',

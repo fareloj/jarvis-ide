@@ -244,4 +244,72 @@ test('formatRecallForPrompt rotula quem disse o quê e some quando não há nada
   assert.match(texto, /nunca invente lembranças/);
 });
 
+test('usuário pode listar, exportar, apagar uma troca e limpar o projeto', async (context) => {
+  const restore = installFakeEmbedding();
+  memory.resetCache();
+  context.after(restore);
+  const projectPath = '/projeto/gerenciamento';
+
+  await memory.rememberTurns({
+    projectPath,
+    sessionId: 'sessao-A',
+    sessionTitle: 'Preferências',
+    turns: [
+      { role: 'user', content: 'Eu gosto de futebol e jogo bola domingo.' },
+      { role: 'assistant', content: 'Vou considerar seu interesse por futebol.' },
+    ],
+  });
+  const records = await memory.listRecords({ projectPath, query: 'futebol' });
+  assert.equal(records.length, 2);
+  assert.ok(records.every((record) => !('vector' in record)), 'a API de gestão não expõe vetores');
+
+  const exported = await memory.exportRecords({ projectPath });
+  assert.equal(exported.version, 1);
+  assert.equal(exported.records.length, 2);
+
+  const deleted = await memory.deleteRecord({ projectPath, id: records[0].id });
+  assert.equal(deleted.removed, 2, 'apagar um turno remove a troca vinculada inteira');
+  assert.deepEqual(await memory.listRecords({ projectPath }), []);
+
+  await memory.rememberTurns({
+    projectPath,
+    sessionId: 'sessao-B',
+    turns: [{ role: 'user', content: 'Uso Python e banco de dados PostgreSQL.' }],
+  });
+  assert.equal((await memory.clearProject({ projectPath })).removed, 1);
+  assert.deepEqual(await memory.listRecords({ projectPath }), []);
+});
+
+test('limites de retenção e recall são persistidos e normalizados por projeto', async () => {
+  const projectPath = '/projeto/configuracao';
+  const settings = await memory.updateSettings({
+    projectPath,
+    retentionDays: 30,
+    maxTurns: 750,
+    recallLimit: 7,
+    minRecallScore: 0.6,
+  });
+  assert.deepEqual(settings, {
+    retentionDays: 30,
+    maxTurns: 750,
+    recallLimit: 7,
+    minRecallScore: 0.6,
+  });
+  assert.deepEqual(await memory.getSettings({ projectPath }), settings);
+
+  const clamped = await memory.updateSettings({
+    projectPath,
+    retentionDays: 0,
+    maxTurns: 10,
+    recallLimit: 99,
+    minRecallScore: 2,
+  });
+  assert.deepEqual(clamped, {
+    retentionDays: 1,
+    maxTurns: 100,
+    recallLimit: 10,
+    minRecallScore: 0.95,
+  });
+});
+
 test.after(() => fs.rmSync(memoryRoot, { recursive: true, force: true }));

@@ -46,7 +46,7 @@ Não misture refatorações oportunistas, mudanças visuais e funcionalidades n�
 | 9 | Robustecer o runtime agentic | Gemini | B | CONCLUÍDA | 7–8 |
 | 10 | Completar o sistema de skills | Codex | B | PENDENTE | 9 |
 | 11 | Melhorar ciclo de vida do RAG | Codex | B | PENDENTE | 9 |
-| 12 | Completar gerenciamento de memória | Codex | B | PENDENTE | 11 |
+| 12 | Completar gerenciamento de memória | Codex | B | EM ANDAMENTO | 11 |
 | 13 | Criar testes end-to-end do Electron | Codex | B | PENDENTE | 7–12 |
 | 14 | Empacotar e publicar o aplicativo | Codex | B | PENDENTE | 13 |
 
@@ -508,20 +508,29 @@ Dar ao usuário controle integral sobre o que o agente lembra.
 
 ### Escopo
 
-- Buscar, editar, excluir e exportar memórias explícitas.
-- Mostrar memórias semânticas recuperadas em cada resposta.
-- Exibir similaridade e motivo da recuperação.
-- Configurar retenção, limite e deduplicação.
-- Separar preferência global, projeto, sessão e decisão técnica.
-- Criar operação de limpeza com preview.
+- [x] Buscar, editar, excluir e exportar memórias explícitas.
+- [x] Mostrar memórias semânticas recuperadas em cada resposta.
+- [x] Exibir similaridade e motivo da recuperação.
+- [x] Configurar retenção, limite e deduplicação.
+- [x] Separar preferência global, projeto, sessão e decisão técnica.
+- [x] Criar operação de limpeza com preview.
 
 ### Critérios de aceite
 
-- [ ] Usuário consegue localizar e apagar qualquer memória.
+- [x] Usuário consegue localizar e apagar qualquer memória.
 - [ ] Memória apagada não reaparece em outra conversa.
-- [ ] Escopos não vazam entre projetos.
-- [ ] Credenciais continuam redigidas.
-- [ ] Limpeza e exportação possuem testes de integridade.
+- [x] Escopos não vazam entre projetos.
+- [x] Credenciais continuam redigidas.
+- [x] Limpeza e exportação possuem testes de integridade.
+
+### Estado em 2026-08-16
+
+O gerenciador agora cobre memórias explícitas e turnos semânticos: busca,
+edição, exclusão de trocas vinculadas, limpeza com contagem prévia, exportação,
+escopos global/projeto/sessão e limites de retenção/recall. Cada resposta exibe
+as conversas recuperadas, score e motivo. A tarefa permanece em andamento até
+a Tarefa 11 remover do corpus RAG a nota correspondente a uma memória apagada;
+sem essa ligação, o mesmo texto ainda poderia reaparecer pela busca documental.
 
 ---
 
@@ -589,6 +598,7 @@ Registre aqui problemas encontrados durante uma tarefa sem interromper o escopo 
 
 | Data | Tarefa | Resultado | Testes | Commit | Observações |
 |---|---:|---|---|---|---|
+| 2026-08-16 | 12 (parcial) | Gerenciamento, escopos e transparência da memória | 181/181 | `feat(memory): add user-managed scopes and recall evidence` | CRUD e exportação de memórias explícitas; gestão e limpeza de turnos semânticos; retenção, limite e score configuráveis; evidência de recall persistida na mensagem. Falta ligar exclusão explícita à remoção da nota no RAG. |
 | 2026-08-16 | Baseline | Runner de testes independente do shell para Windows/Node 20 | 178/178 | `fix(ci): make test discovery shell independent` | Evita glob literal no GitHub Actions e ignora testes copiados para `data/rag-workspace`; syntax check e suíte completa passaram localmente. A tentativa adicional via `npx node@20` foi bloqueada pelo certificado local do npm, não pelo código. |
 | 2026-08-14 | 9 | Robustecimento do runtime agentic com orçamentos, checkpoints e retry seguro | 142/142 (8 novos) | `feat(agent): harden agentic runtime with checkpoints and retry` | Orçamentos configuráveis de turnos, tokens e tempo. Compactação determinística de contexto com preservação incondicional de system prompts e metas do usuário. Checkpoints versionados (v1) e gravados atomicamente via writeAtomic com redação abrangente de segredos e tokens (redactSecrets). Prevenção de duplicidade em retries via idempotency keys baseadas em hash SHA-256 das chamadas a tools puras. Retry restrito exclusivamente a erros transitórios de rede e sobrecarga com backoff exponencial. Fila de jobs em segundo plano com gerenciamento de lifecycle e encerramento de árvore de processos por killTree. |
 | 2026-08-14 | 8 | Busca global e painel Problems com execução isolada | 134/134 (12 novos) | `feat(diagnostics): add global search and problems panel` | Busca textual e regex rápida ignorando dependências (.git, node_modules) e binários com match highlighting. Substituição multi-arquivo 100% transacional usando planPatch/applyPatch com preview de diff e rollback atômico. Executor de Problems em ambiente saneado por allowlist (sem vazamento de API keys), timeout estrito com kill de árvore de processos netos (taskkill /T /F), cancelamento via IPC e parser estruturado para TypeScript, ESLint, Python, Jest e Node test runner com navegação direta para linha e coluna no editor Monaco. |

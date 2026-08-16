@@ -3,7 +3,14 @@ const crypto = require('node:crypto');
 const { EVENT_TYPES, createRunEvent } = require('./protocol');
 const rag = require('./rag-client');
 const { listCorpusDocuments, saveNote, stageProject } = require('./workspace-indexer');
-const { formatMemoriesForPrompt, listMemories, saveMemory } = require('./memory-store');
+const {
+  deleteMemory,
+  exportMemories,
+  formatMemoriesForPrompt,
+  listMemories,
+  saveMemory,
+  updateMemory,
+} = require('./memory-store');
 const {
   formatSkillsForPrompt, listSkills, loadActiveSkills, loadSkill, requiredSkillForTool,
 } = require('./skill-loader');
@@ -162,7 +169,9 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
     console.error('[skills] falha ao registrar uso:', error.message);
   });
   const skillPrompt = formatSkillsForPrompt(activeSkills);
-  const memories = options.projectPath && !options.memoryContextIncluded ? await listMemories(options.projectPath) : [];
+  const memories = options.projectPath && !options.memoryContextIncluded
+    ? await listMemories(options.projectPath, { sessionId: options.sessionId })
+    : [];
   const memoryPrompt = formatMemoriesForPrompt(memories);
   const memoryContextAvailable = options.memoryContextIncluded || memories.length > 0;
 
@@ -174,9 +183,10 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
   // grava memoria de conversa (a memoria explicita por tool segue valendo).
   const memoriaLigada = options.conversationMemoryEnabled !== false;
   let recallPrompt = '';
+  let recalled = [];
   try {
     if (!memoriaLigada) throw new Error('memoria de conversa desligada pelo usuario');
-    const recalled = await conversationMemory.recallRelevant({
+    recalled = await conversationMemory.recallRelevant({
       projectPath: options.projectPath,
       sessionId: options.sessionId,
       query: lastUserMessage,
@@ -206,6 +216,19 @@ async function streamChat(messages, model, runId, clientResponse, abortControlle
     defaultJobQueue.appendEvent(runId, event);
     clientResponse.write(`${JSON.stringify(event)}\n`);
   };
+
+  if (recalled.length) {
+    emit(EVENT_TYPES.MEMORY_RECALLED, {
+      results: recalled.map((hit) => ({
+        score: hit.score,
+        sessionTitle: hit.sessionTitle,
+        createdAt: hit.createdAt,
+        exchangeId: hit.exchangeId,
+        turns: hit.turns,
+        reason: 'Similaridade semântica com a mensagem atual',
+      })),
+    });
+  }
 
   for (let turn = 0; turn < maxTurns && !doneSent; turn += 1) {
     if (Date.now() >= deadline) {
@@ -603,7 +626,14 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
 
       if (request.method === 'POST' && request.url === '/api/memory/list') {
         const body = await readJson(request);
-        sendJson(response, 200, { memories: await listMemories(body.projectPath) });
+        sendJson(response, 200, {
+          memories: await listMemories(body.projectPath, {
+            query: body.query,
+            scope: body.scope,
+            kind: body.kind,
+            sessionId: body.sessionId,
+          }),
+        });
         return;
       }
 
@@ -611,6 +641,56 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
         const body = await readJson(request);
         const saved = await saveMemory(body);
         sendJson(response, 200, saved);
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/memory/update') {
+        const body = await readJson(request);
+        sendJson(response, 200, await updateMemory(body));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/memory/delete') {
+        const body = await readJson(request);
+        sendJson(response, 200, await deleteMemory(body));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/memory/export') {
+        const body = await readJson(request);
+        sendJson(response, 200, await exportMemories(body.projectPath, body));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/memory/conversation/list') {
+        const body = await readJson(request);
+        sendJson(response, 200, { records: await conversationMemory.listRecords(body) });
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/memory/conversation/delete') {
+        const body = await readJson(request);
+        sendJson(response, 200, await conversationMemory.deleteRecord(body));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/memory/conversation/clear') {
+        const body = await readJson(request);
+        sendJson(response, 200, await conversationMemory.clearProject(body));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/memory/conversation/export') {
+        const body = await readJson(request);
+        sendJson(response, 200, await conversationMemory.exportRecords(body));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/memory/conversation/settings') {
+        const body = await readJson(request);
+        sendJson(response, 200, body.update === true
+          ? await conversationMemory.updateSettings(body)
+          : await conversationMemory.getSettings(body));
         return;
       }
 

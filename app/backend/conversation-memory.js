@@ -28,6 +28,12 @@ const DEFAULT_RECALL_LIMIT = 4;
 // Similaridade de cosseno abaixo disto é ruído: injetar turno irrelevante
 // gasta contexto e confunde o modelo mais do que ajuda.
 const MIN_RECALL_SCORE = 0.45;
+const DEFAULT_SETTINGS = Object.freeze({
+  retentionDays: 365,
+  maxTurns: MAX_TURNS_PER_SCOPE,
+  recallLimit: DEFAULT_RECALL_LIMIT,
+  minRecallScore: MIN_RECALL_SCORE,
+});
 
 // scopeKey -> { records: [...], loaded: true }
 const cache = new Map();
@@ -40,6 +46,40 @@ function scopeKey(projectPath) {
 
 function scopeFile(key) {
   return path.join(ROOT, `${key}.jsonl`);
+}
+
+function settingsFile(key) {
+  return path.join(ROOT, `${key}.settings.json`);
+}
+
+function clamp(value, fallback, minimum, maximum) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, number)) : fallback;
+}
+
+function normalizeSettings(settings = {}) {
+  return {
+    retentionDays: Math.round(clamp(settings.retentionDays, DEFAULT_SETTINGS.retentionDays, 1, 3_650)),
+    maxTurns: Math.round(clamp(settings.maxTurns, DEFAULT_SETTINGS.maxTurns, 100, 20_000)),
+    recallLimit: Math.round(clamp(settings.recallLimit, DEFAULT_SETTINGS.recallLimit, 1, 10)),
+    minRecallScore: clamp(settings.minRecallScore, DEFAULT_SETTINGS.minRecallScore, 0.1, 0.95),
+  };
+}
+
+async function getSettings({ projectPath } = {}) {
+  try {
+    return normalizeSettings(JSON.parse(await fs.readFile(settingsFile(scopeKey(projectPath)), 'utf8')));
+  } catch (error) {
+    if (error.code === 'ENOENT') return { ...DEFAULT_SETTINGS };
+    throw error;
+  }
+}
+
+function retainRecords(records, settings, now = Date.now()) {
+  const oldest = now - settings.retentionDays * 24 * 60 * 60 * 1_000;
+  return records
+    .filter((record) => !record.createdAt || Date.parse(record.createdAt) >= oldest)
+    .slice(-settings.maxTurns);
 }
 
 function vectorToBase64(vector) {
@@ -139,6 +179,23 @@ async function rewriteScope(key, records) {
   await fs.rename(temporary, destination);
 }
 
+async function updateSettings({ projectPath, ...input } = {}) {
+  const key = scopeKey(projectPath);
+  const settings = normalizeSettings(input);
+  await fs.mkdir(ROOT, { recursive: true });
+  const destination = settingsFile(key);
+  const temporary = `${destination}.${process.pid}.${Date.now()}.tmp`;
+  await fs.writeFile(temporary, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
+  await fs.rename(temporary, destination);
+  const scope = await loadScope(key);
+  const retained = retainRecords(scope.records, settings);
+  if (retained.length !== scope.records.length) {
+    scope.records = retained;
+    await rewriteScope(key, scope.records);
+  }
+  return settings;
+}
+
 // Esta memória é arquivo de longo prazo em texto puro no disco, e volta para
 // dentro do prompt em conversas futuras. Uma chave colada de passagem num
 // chat não pode virar registro permanente — redigimos antes de gravar.
@@ -194,6 +251,7 @@ async function rememberTurns({ projectPath, sessionId, sessionTitle, turns = [] 
   if (!ENABLED || !sessionId || !Array.isArray(turns) || !turns.length) return { remembered: 0 };
   const key = scopeKey(projectPath);
   const scope = await loadScope(key);
+  const settings = await getSettings({ projectPath });
   // Uma chamada representa uma troca da conversa (normalmente pergunta +
   // resposta). Preservar esse vínculo impede que a busca encontre apenas a
   // pergunta antiga e descarte justamente a resposta que contém os fatos.
@@ -231,8 +289,9 @@ async function rememberTurns({ projectPath, sessionId, sessionTitle, turns = [] 
     remembered += 1;
   }
 
-  if (scope.records.length > MAX_TURNS_PER_SCOPE) {
-    scope.records = scope.records.slice(-MAX_TURNS_PER_SCOPE);
+  const retained = retainRecords(scope.records, settings);
+  if (retained.length !== scope.records.length) {
+    scope.records = retained;
     await rewriteScope(key, scope.records);
   }
   return { remembered };
@@ -301,7 +360,8 @@ async function recallRelevant({ projectPath, sessionId, query, limit = DEFAULT_R
   if (normalizedQuery.length < MIN_CONTENT_LENGTH) return [];
 
   const scope = await loadScope(scopeKey(projectPath));
-  const units = buildRecallUnits(scope.records, sessionId);
+  const settings = await getSettings({ projectPath });
+  const units = buildRecallUnits(retainRecords(scope.records, settings), sessionId);
   if (!units.length) return [];
 
   let queryVector;
@@ -326,7 +386,7 @@ async function recallRelevant({ projectPath, sessionId, query, limit = DEFAULT_R
         turns: unit.records.map((record) => ({ role: record.role, content: record.content })),
       };
     })
-    .filter((hit) => hit.score >= MIN_RECALL_SCORE)
+    .filter((hit) => hit.score >= settings.minRecallScore)
     .sort((left, right) => right.score - left.score);
 
   // A mesma pergunta reaparece com frequência em chats diferentes. Uma cópia
@@ -340,7 +400,8 @@ async function recallRelevant({ projectPath, sessionId, query, limit = DEFAULT_R
     if (key) seen.add(key);
     deduplicated.push(hit);
   }
-  return deduplicated.slice(0, Math.max(1, Math.min(10, limit)));
+  const effectiveLimit = limit === DEFAULT_RECALL_LIMIT ? settings.recallLimit : limit;
+  return deduplicated.slice(0, Math.max(1, Math.min(10, effectiveLimit)));
 }
 
 function formatRecallForPrompt(hits = []) {
@@ -399,6 +460,52 @@ async function forgetSession(sessionId) {
   return { removed };
 }
 
+async function listRecords({ projectPath, query, sessionId, limit = 200 } = {}) {
+  const scope = await loadScope(scopeKey(projectPath));
+  const normalizedQuery = normalizedDedupeKey(query);
+  return scope.records
+    .filter((record) => !sessionId || record.sessionId === sessionId)
+    .filter((record) => !normalizedQuery || normalizedDedupeKey(
+      `${record.sessionTitle || ''} ${record.content || ''}`,
+    ).includes(normalizedQuery))
+    .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
+    .slice(0, Math.max(1, Math.min(1_000, Number(limit) || 200)))
+    .map(({ vector, ...record }) => record);
+}
+
+async function deleteRecord({ projectPath, id } = {}) {
+  const key = scopeKey(projectPath);
+  const scope = await loadScope(key);
+  const target = scope.records.find((record) => record.id === String(id || ''));
+  if (!target) throw new Error('Trecho de conversa não encontrado neste projeto.');
+  const before = scope.records.length;
+  scope.records = scope.records.filter((record) => (
+    target.exchangeId
+      ? record.exchangeId !== target.exchangeId
+      : record.id !== target.id
+  ));
+  await rewriteScope(key, scope.records);
+  return { removed: before - scope.records.length, id: target.id, exchangeId: target.exchangeId || null };
+}
+
+async function clearProject({ projectPath } = {}) {
+  const key = scopeKey(projectPath);
+  const scope = await loadScope(key);
+  const removed = scope.records.length;
+  scope.records = [];
+  await rewriteScope(key, scope.records);
+  return { removed };
+}
+
+async function exportRecords({ projectPath, query, sessionId } = {}) {
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    scope: scopeKey(projectPath),
+    records: await listRecords({ projectPath, query, sessionId, limit: 1_000 }),
+  };
+}
+
 async function stats(projectPath) {
   const scope = await loadScope(scopeKey(projectPath));
   const sessions = new Set(scope.records.map((record) => record.sessionId));
@@ -411,13 +518,20 @@ function resetCache() {
 }
 
 module.exports = {
+  DEFAULT_SETTINGS,
   EMBED_MODEL,
   MIN_RECALL_SCORE,
+  clearProject,
+  deleteRecord,
+  exportRecords,
   forgetSession,
   formatRecallForPrompt,
+  getSettings,
+  listRecords,
   recallRelevant,
   redactSecrets,
   rememberTurns,
   resetCache,
   stats,
+  updateSettings,
 };
