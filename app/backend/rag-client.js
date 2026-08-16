@@ -1,7 +1,11 @@
-const DEFAULT_RAG_URL = (process.env.JARVIS_RAG_URL || 'http://127.0.0.1:8090').replace(/\/$/, '');
+const serviceManager = require('./rag-service-manager');
+
+async function baseUrl() {
+  return (await serviceManager.readConfig()).endpoint;
+}
 
 async function requestJson(path, { method = 'GET', body, timeoutMs = 60_000 } = {}) {
-  const response = await fetch(`${DEFAULT_RAG_URL}${path}`, {
+  const response = await fetch(`${await baseUrl()}${path}`, {
     method,
     headers: body ? { 'Content-Type': 'application/json; charset=utf-8' } : {},
     body: body ? JSON.stringify(body) : undefined,
@@ -15,10 +19,11 @@ async function requestJson(path, { method = 'GET', body, timeoutMs = 60_000 } = 
 }
 
 async function health() {
+  const url = await baseUrl();
   try {
-    return { online: true, url: DEFAULT_RAG_URL, details: await requestJson('/health', { timeoutMs: 6_000 }) };
+    return { online: true, url, details: await requestJson('/health', { timeoutMs: 6_000 }) };
   } catch (error) {
-    return { online: false, url: DEFAULT_RAG_URL, error: error.message };
+    return { online: false, url, error: error.message };
   }
 }
 
@@ -37,22 +42,56 @@ async function search({ query, topK = 6, useReranker = true, filters = {} } = {}
   });
 }
 
-async function indexCorpus({ containerPath, name, corpus } = {}) {
+async function indexCorpus({ containerPath, name, corpus } = {}, options = {}) {
   if (!String(containerPath || '').startsWith('/jarvis-workspace/')) {
     throw new Error('O corpus precisa estar no staging seguro do JARVIS.');
   }
   const corpusName = String(name || corpus || '').trim();
   if (!corpusName) throw new Error('Nome do corpus inválido.');
 
-  const ingest = await requestJson('/ingest', {
-    method: 'POST',
-    body: { root_path: containerPath, name: corpusName },
-    timeoutMs: 120_000,
-  });
-  const embed = await requestJson('/embed', { method: 'POST', body: {}, timeoutMs: 900_000 });
-  const dense = await requestJson('/dense/reindex', { method: 'POST', timeoutMs: 180_000 });
-  const lexical = await requestJson('/lexical/reindex', { method: 'POST', timeoutMs: 180_000 });
-  return { corpus: corpusName, ingest, embed, dense, lexical };
+  const steps = [
+    ['ingest', '/ingest', { root_path: containerPath, name: corpusName }, 120_000],
+    ['embed', '/embed', { limit: 100 }, 120_000],
+    ['dense', '/dense/reindex', undefined, 180_000],
+    ['lexical', '/lexical/reindex', undefined, 180_000],
+  ];
+  const results = {};
+  for (let index = 0; index < steps.length; index += 1) {
+    const [step, endpoint, body, timeoutMs] = steps[index];
+    options.onProgress?.({ step, index, total: steps.length, percent: Math.round((index / steps.length) * 100) });
+    if (step === 'embed') {
+      const batches = [];
+      let embedded = 0;
+      for (let batch = 0; batch < 200; batch += 1) {
+        const result = await requestJson(endpoint, { method: 'POST', body, timeoutMs });
+        batches.push(result);
+        embedded += Number(result.embedded || 0);
+        options.onProgress?.({
+          step,
+          index,
+          total: steps.length,
+          percent: 25 + Math.min(20, Math.round(embedded / 100)),
+          embedded,
+          batch: batch + 1,
+        });
+        if (Number(result.requested || 0) < body.limit) break;
+      }
+      results[step] = { ...batches.at(-1), embedded, batches: batches.length };
+    } else {
+      results[step] = await requestJson(endpoint, {
+        method: 'POST',
+        ...(body !== undefined ? { body } : {}),
+        timeoutMs,
+      });
+    }
+    options.onProgress?.({
+      step,
+      index: index + 1,
+      total: steps.length,
+      percent: Math.round(((index + 1) / steps.length) * 100),
+    });
+  }
+  return { corpus: corpusName, ...results };
 }
 
 module.exports = { health, indexCorpus, search };

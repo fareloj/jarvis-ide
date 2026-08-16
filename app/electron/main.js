@@ -385,6 +385,34 @@ function registerIpc() {
     if (!response.ok) throw new Error(data.error || 'Falha ao indexar o projeto.');
     return data;
   });
+  ipcMain.handle('rag:index-status', async (_event, id) => {
+    const response = await backendFetch(`/api/rag/index/${encodeURIComponent(id)}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao consultar a indexação.');
+    return data;
+  });
+  ipcMain.handle('rag:index-cancel', async (_event, id) => {
+    const response = await backendFetch(`/api/rag/index/${encodeURIComponent(id)}`, { method: 'POST' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao cancelar a indexação.');
+    return data;
+  });
+  ipcMain.handle('rag:config', async (_event, payload) => {
+    const response = await backendFetch('/api/rag/config', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao configurar o RAG.');
+    return data;
+  });
+  ipcMain.handle('rag:services', async (_event, payload) => {
+    const response = await backendFetch('/api/rag/services', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao controlar os serviços do RAG.');
+    return data;
+  });
   ipcMain.handle('rag:search', async (_event, payload) => {
     const response = await backendFetch('/api/rag/search', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),

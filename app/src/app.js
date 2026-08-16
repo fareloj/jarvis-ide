@@ -80,6 +80,7 @@ const state = {
   branches: initialSession.branches || {},
   project: initialSession.project,
   ragBusy: false,
+  ragIndexJobId: null,
   ragCorpus: ragProjects[initialSession.project.path]?.corpus || null,
   activeSkills,
   toolsEnabled: localStorage.getItem('jarvis:tools-enabled') !== 'false',
@@ -715,7 +716,17 @@ function specialPage(type) {
         <div class="rag-health" id="ragHealth"><span class="status-dot checking"></span><span>Verificando o engine…</span></div>
         <button class="button secondary" data-action="rag-refresh"><i class="ph-duotone ph-arrows-clockwise"></i>Verificar</button>
         <button class="button primary" data-action="rag-index"><i class="ph-duotone ph-database"></i>Indexar projeto</button>
+        <button class="button secondary hidden" id="ragCancelIndex" data-action="rag-cancel-index"><i class="ph-duotone ph-x-circle"></i>Cancelar</button>
       </div>
+      <section class="rag-operations">
+        <div class="rag-progress hidden" id="ragProgress"><div><strong id="ragProgressLabel">Preparando indexação</strong><span id="ragProgressPercent">0%</span></div><progress id="ragProgressBar" max="100" value="0"></progress><small id="ragProgressDetail"></small></div>
+        <details class="rag-service-settings">
+          <summary>Engine e serviços</summary>
+          <div class="rag-config-grid"><label>Pasta do Hybrid RAG Engine<input id="ragEnginePath" placeholder="C:\\caminho\\hybrid-rag-engine"></label><label>Endpoint local<input id="ragEndpoint" value="http://127.0.0.1:8090"></label></div>
+          <div class="rag-service-actions"><button class="button compact secondary" data-action="rag-config-save">Salvar configuração</button><button class="button compact secondary" data-action="rag-service-start">Iniciar</button><button class="button compact secondary" data-action="rag-service-restart">Reiniciar</button><button class="button compact danger-ghost" data-action="rag-service-stop">Parar</button></div>
+          <div class="rag-service-status" id="ragServiceStatus">Carregando diagnóstico…</div>
+        </details>
+      </section>
       <div class="rag-grid">
         <section class="rag-panel">
           <p class="eyebrow">Busca híbrida</p>
@@ -2462,7 +2473,9 @@ async function checkHealth() {
 
 function setRagBusy(busy) {
   state.ragBusy = busy;
-  $$('[data-action^="rag-"]').forEach((button) => { button.disabled = busy; });
+  $$('[data-action^="rag-"]').forEach((button) => {
+    button.disabled = busy && button.dataset.action !== 'rag-cancel-index';
+  });
 }
 
 async function checkRagHealth() {
@@ -2477,6 +2490,25 @@ async function checkRagHealth() {
     dot.className = `status-dot ${result.online ? 'online' : 'offline'}`;
     const denseCount = result.details?.dependencies?.dense_index?.body?.indexed;
     const lexicalCount = result.details?.dependencies?.lexical_index?.body?.indexed;
+    const config = result.services?.config || {};
+    const enginePath = $('#ragEnginePath');
+    const endpoint = $('#ragEndpoint');
+    if (enginePath && document.activeElement !== enginePath) enginePath.value = config.enginePath || '';
+    if (endpoint && document.activeElement !== endpoint) endpoint.value = config.endpoint || result.url || '';
+    const serviceStatus = $('#ragServiceStatus');
+    if (serviceStatus) {
+      const containers = result.services?.containers || [];
+      const healthy = containers.filter((item) => item.state === 'running' && (!item.health || item.health === 'healthy')).length;
+      const gpu = result.services?.gpu;
+      const rerankerDevice = result.details?.dependencies?.reranker?.body?.device;
+      serviceStatus.textContent = [
+        result.services?.docker?.available ? `Docker ${result.services.docker.version || 'online'}` : 'Docker indisponível',
+        containers.length ? `${healthy}/${containers.length} containers prontos` : 'nenhum container detectado',
+        gpu?.available ? `GPU detectada: ${gpu.summary}` : 'GPU não detectada',
+        `Reranker: ${rerankerDevice || 'dispositivo não informado'}`,
+        'Embedder Ollama: dispositivo não informado pelo engine',
+      ].join(' · ');
+    }
     label.textContent = result.online
       ? `Hybrid RAG Engine online${Number.isFinite(denseCount) ? ` · ${denseCount} vetores · ${lexicalCount || 0} termos` : ''}`
       : `Offline · ${result.error || 'sem resposta'}`;
@@ -2498,7 +2530,9 @@ async function indexCurrentProject() {
   setRagBusy(true);
   toast('Indexação iniciada', 'Preparando arquivos, embeddings e índices híbridos.');
   try {
-    const result = await bridge.rag.indexProject({ projectPath: state.project.path });
+    const started = await bridge.rag.indexProject({ projectPath: state.project.path });
+    const result = await waitForRagIndex(started.job);
+    if (result.cancelled) return;
     state.ragCorpus = result.staged.corpus;
     ragProjects[state.project.path] = {
       corpus: state.ragCorpus,
@@ -2535,7 +2569,7 @@ function renderRagInventory(filter = '') {
   const totalBytes = state.ragDocuments.reduce((sum, item) => sum + Number(item.size || 0), 0);
   summary.textContent = `${state.ragDocuments.length} documentos · ${formatBytes(totalBytes)}`;
   target.innerHTML = documents.length ? documents.map((item) => `
-    <div class="rag-document-row"><i class="ph-duotone ${fileIcon(item.path)}"></i><span><strong>${escapeHtml(item.path)}</strong><small>${escapeHtml(item.source === 'memory' ? 'memória' : item.extension)} · ${formatBytes(item.size)}</small></span></div>`).join('')
+    <button class="rag-document-row" data-file-path="${escapeHtml(item.path)}" ${item.source === 'memory' ? 'disabled' : ''}><i class="ph-duotone ${fileIcon(item.path)}"></i><span><strong>${escapeHtml(item.path)}</strong><small>${escapeHtml(item.source === 'memory' ? 'memória' : item.extension)} · ${formatBytes(item.size)}</small></span></button>`).join('')
     : '<p class="empty-copy">Nenhum documento corresponde ao filtro.</p>';
 }
 
@@ -2571,7 +2605,7 @@ function renderRagResults(payload) {
     <article class="rag-result">
       <div class="rag-result-meta"><strong>${escapeHtml(item.path || 'Documento')}</strong><span>linhas ${escapeHtml(item.start_line || '?')}–${escapeHtml(item.end_line || '?')}</span></div>
       <pre>${escapeHtml(item.text || item.content || '')}</pre>
-      <div class="rag-score"><span>${escapeHtml(item.language || 'texto')}</span><span>RRF ${Number(item.rrf_score || 0).toFixed(4)}</span></div>
+      <div class="rag-score"><span>${escapeHtml(item.language || 'texto')}</span><span>RRF ${Number(item.rrf_score || 0).toFixed(4)}</span><button class="button compact secondary" data-file-path="${escapeHtml(item.path || '')}">Abrir fonte</button></div>
     </article>`).join('');
 }
 
@@ -2619,12 +2653,6 @@ async function saveKnowledgeNote() {
         scope,
         sessionId: scope === 'session' ? state.sessionId : undefined,
       });
-      if (scope === 'project') {
-        const result = await bridge.rag.saveNote({ projectPath: state.project.path, title, content });
-        state.ragCorpus = result.note.corpus;
-        ragProjects[state.project.path] = { corpus: state.ragCorpus, indexedAt: new Date().toISOString() };
-        localStorage.setItem('jarvis:rag-projects', JSON.stringify(ragProjects));
-      }
     }
     $('#noteTitle').value = '';
     $('#noteContent').value = '';
@@ -2765,6 +2793,72 @@ async function loadMemories(query = $('#memorySearch')?.value || '') {
     target.textContent = error.message;
     if (conversationTarget) conversationTarget.textContent = error.message;
   }
+}
+
+function renderRagProgress(job) {
+  const target = $('#ragProgress');
+  if (!target) return;
+  target.classList.remove('hidden');
+  const phaseNames = {
+    staging: 'Preparando arquivos', ingest: 'Ingerindo alterações', embed: 'Gerando embeddings',
+    dense: 'Atualizando índice vetorial', lexical: 'Atualizando índice lexical',
+    completed: 'Indexação concluída', cancelled: 'Indexação cancelada', failed: 'Falha na indexação',
+  };
+  $('#ragProgressLabel').textContent = phaseNames[job.phase] || job.phase;
+  $('#ragProgressPercent').textContent = `${job.percent || 0}%`;
+  $('#ragProgressBar').value = job.percent || 0;
+  $('#ragProgressDetail').textContent = job.cancellationState === 'finalizing_consistent_indexes'
+    ? 'Cancelamento solicitado; finalizando índices para manter o corpus consistente.'
+    : job.errors?.map((item) => `${item.phase}: ${item.message}`).join(' · ') || '';
+}
+
+async function waitForRagIndex(initialJob) {
+  state.ragIndexJobId = initialJob.id;
+  $('#ragCancelIndex')?.classList.remove('hidden');
+  let job = initialJob;
+  try {
+    while (job.status === 'running') {
+      renderRagProgress(job);
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      job = await bridge.rag.indexStatus(job.id);
+    }
+    renderRagProgress(job);
+    if (job.status === 'failed') throw new Error(job.errors?.[0]?.message || 'A indexação falhou.');
+    if (job.status === 'cancelled') {
+      toast('Indexação cancelada', 'O corpus permaneceu consistente.');
+      return { cancelled: true };
+    }
+    return { staged: job.staged, indexed: job.indexed };
+  } finally {
+    state.ragIndexJobId = null;
+    $('#ragCancelIndex')?.classList.add('hidden');
+  }
+}
+
+async function cancelRagIndex() {
+  if (!state.ragIndexJobId) return;
+  await bridge.rag.cancelIndex(state.ragIndexJobId);
+  toast('Cancelamento solicitado', 'A operação será encerrada num ponto consistente.');
+}
+
+async function saveRagConfiguration() {
+  try {
+    await bridge.rag.configure({ enginePath: $('#ragEnginePath')?.value, endpoint: $('#ragEndpoint')?.value });
+    toast('RAG configurado', 'Caminho e endpoint local foram validados e salvos.');
+    await checkRagHealth();
+  } catch (error) { toast('Configuração inválida', error.message, 'error'); }
+}
+
+async function controlRagServices(action) {
+  const labels = { start: 'iniciar', stop: 'parar', restart: 'reiniciar' };
+  if (!window.confirm(`Confirma ${labels[action]} os serviços do Hybrid RAG Engine?`)) return;
+  setRagBusy(true);
+  try {
+    await bridge.rag.controlServices({ action, confirmed: true });
+    toast('Serviços atualizados', `Ação “${labels[action]}” concluída.`);
+    await checkRagHealth();
+  } catch (error) { toast('Falha nos serviços', error.message, 'error'); }
+  finally { setRagBusy(false); }
 }
 
 async function openProject() {
@@ -3776,6 +3870,11 @@ document.addEventListener('click', async (event) => {
   if (action === 'curate-skills') curateSkills();
   if (action === 'rag-refresh') checkRagHealth();
   if (action === 'rag-index') indexCurrentProject();
+  if (action === 'rag-cancel-index') cancelRagIndex();
+  if (action === 'rag-config-save') saveRagConfiguration();
+  if (action === 'rag-service-start') controlRagServices('start');
+  if (action === 'rag-service-restart') controlRagServices('restart');
+  if (action === 'rag-service-stop') controlRagServices('stop');
   if (action === 'rag-search') searchKnowledge();
   if (action === 'rag-save-note') saveKnowledgeNote();
   if (action === 'memory-cancel-edit') cancelMemoryEdit();

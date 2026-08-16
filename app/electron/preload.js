@@ -47,6 +47,10 @@ contextBridge.exposeInMainWorld('jarvis', {
   rag: {
     health: () => ipcRenderer.invoke('rag:health'),
     indexProject: (payload) => ipcRenderer.invoke('rag:index-project', payload),
+    indexStatus: (id) => ipcRenderer.invoke('rag:index-status', id),
+    cancelIndex: (id) => ipcRenderer.invoke('rag:index-cancel', id),
+    configure: (payload) => ipcRenderer.invoke('rag:config', payload),
+    controlServices: (payload) => ipcRenderer.invoke('rag:services', payload),
     search: (payload) => ipcRenderer.invoke('rag:search', payload),
     documents: (payload) => ipcRenderer.invoke('rag:documents', payload),
     saveNote: (payload) => ipcRenderer.invoke('rag:save-note', payload),

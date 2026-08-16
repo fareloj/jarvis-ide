@@ -4,7 +4,9 @@ const path = require('node:path');
 const { execFile, spawn } = require('node:child_process');
 const { promisify } = require('node:util');
 const rag = require('./rag-client');
+const ragIndexJobs = require('./rag-index-jobs');
 const { listMemories, saveMemory } = require('./memory-store');
+const { saveNote } = require('./workspace-indexer');
 const { searchWeb } = require('./web-search');
 const fileWrite = require('./file-write');
 const commandPolicy = require('./command-policy');
@@ -712,7 +714,19 @@ async function runTool(name, args = {}, context = {}) {
     return { path: relative, content: await fs.readFile(target, 'utf8') };
   }
   if (name === 'memory_list') return { memories: await listMemories(projectPath) };
-  if (name === 'memory_save') return saveMemory({ projectPath, ...args });
+  if (name === 'memory_save') {
+    const saved = await saveMemory({ projectPath, ...args });
+    if (saved.memory?.scope === 'project' && projectPath) {
+      await saveNote({
+        projectPath,
+        noteId: `memory-${saved.memory.id}`,
+        title: saved.memory.title,
+        content: saved.memory.content,
+      });
+      saved.indexJob = ragIndexJobs.start({ projectPath });
+    }
+    return saved;
+  }
   if (name === 'terminal_run') {
     const command = String(args.command || '').trim();
     const decisao = commandPolicy.decide(command);

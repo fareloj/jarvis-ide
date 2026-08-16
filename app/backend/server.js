@@ -2,7 +2,11 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const { EVENT_TYPES, createRunEvent } = require('./protocol');
 const rag = require('./rag-client');
-const { listCorpusDocuments, saveNote, stageProject } = require('./workspace-indexer');
+const ragIndexJobs = require('./rag-index-jobs');
+const ragServices = require('./rag-service-manager');
+const {
+  deleteNote, listCorpusDocuments, saveNote, stageProject,
+} = require('./workspace-indexer');
 const {
   deleteMemory,
   exportMemories,
@@ -495,7 +499,20 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
       }
 
       if (request.method === 'GET' && request.url === '/api/rag/health') {
-        sendJson(response, 200, await rag.health());
+        const [engine, services] = await Promise.all([rag.health(), ragServices.status()]);
+        sendJson(response, 200, { ...engine, services });
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/rag/config') {
+        const body = await readJson(request);
+        sendJson(response, 200, { config: await ragServices.writeConfig(body) });
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/rag/services') {
+        const body = await readJson(request);
+        sendJson(response, 200, await ragServices.control(body.action, body));
         return;
       }
 
@@ -640,19 +657,46 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
       if (request.method === 'POST' && request.url === '/api/memory') {
         const body = await readJson(request);
         const saved = await saveMemory(body);
-        sendJson(response, 200, saved);
+        let memoryIndexJob = null;
+        if (saved.memory?.scope === 'project' && body.projectPath) {
+          await saveNote({
+            projectPath: body.projectPath,
+            noteId: `memory-${saved.memory.id}`,
+            title: saved.memory.title,
+            content: saved.memory.content,
+          });
+          memoryIndexJob = ragIndexJobs.start({ projectPath: body.projectPath });
+        }
+        sendJson(response, 200, { ...saved, indexJob: memoryIndexJob });
         return;
       }
 
       if (request.method === 'POST' && request.url === '/api/memory/update') {
         const body = await readJson(request);
-        sendJson(response, 200, await updateMemory(body));
+        const updated = await updateMemory(body);
+        let memoryIndexJob = null;
+        if (updated.memory?.scope === 'project' && body.projectPath) {
+          await saveNote({
+            projectPath: body.projectPath,
+            noteId: `memory-${updated.memory.id}`,
+            title: updated.memory.title,
+            content: updated.memory.content,
+          });
+          memoryIndexJob = ragIndexJobs.start({ projectPath: body.projectPath });
+        }
+        sendJson(response, 200, { ...updated, indexJob: memoryIndexJob });
         return;
       }
 
       if (request.method === 'POST' && request.url === '/api/memory/delete') {
         const body = await readJson(request);
-        sendJson(response, 200, await deleteMemory(body));
+        const deleted = await deleteMemory(body);
+        let memoryIndexJob = null;
+        if (deleted.removed?.scope === 'project' && body.projectPath) {
+          await deleteNote({ projectPath: body.projectPath, noteId: `memory-${deleted.removed.id}` });
+          memoryIndexJob = ragIndexJobs.start({ projectPath: body.projectPath });
+        }
+        sendJson(response, 200, { ...deleted, indexJob: memoryIndexJob });
         return;
       }
 
@@ -702,11 +746,19 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
 
       if (request.method === 'POST' && request.url === '/api/rag/index') {
         const body = await readJson(request);
-        const staged = body.projectPath
-          ? await stageProject(body.projectPath)
-          : { corpus: body.corpus, containerPath: `/jarvis-workspace/${body.corpus}` };
-        const indexed = await rag.indexCorpus(staged);
-        sendJson(response, 200, { staged, indexed });
+        sendJson(response, 202, { job: ragIndexJobs.start(body) });
+        return;
+      }
+
+      const ragJobMatch = /^\/api\/rag\/index\/([^/]+)$/.exec(request.url || '');
+      if (ragJobMatch && request.method === 'GET') {
+        const job = ragIndexJobs.get(decodeURIComponent(ragJobMatch[1]));
+        sendJson(response, job ? 200 : 404, job || { error: 'Indexação não encontrada.' });
+        return;
+      }
+      if (ragJobMatch && request.method === 'POST') {
+        const job = ragIndexJobs.cancel(decodeURIComponent(ragJobMatch[1]));
+        sendJson(response, job ? 200 : 404, job || { error: 'Indexação não está em execução.' });
         return;
       }
 
@@ -880,11 +932,8 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
       if (request.method === 'POST' && request.url === '/api/rag/notes') {
         const body = await readJson(request);
         const note = await saveNote(body);
-        const indexed = body.index === false ? null : await rag.indexCorpus({
-          containerPath: note.containerPath,
-          name: note.corpus,
-        });
-        sendJson(response, 200, { note, indexed });
+        const job = body.index === false ? null : ragIndexJobs.start({ projectPath: body.projectPath });
+        sendJson(response, 200, { note, job });
         return;
       }
 
