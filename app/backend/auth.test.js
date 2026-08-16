@@ -128,7 +128,7 @@ test('API acompanha um terminal aprovado até entregar o output final', { skip: 
   const headers = { Authorization: `Bearer ${backend.authToken}` };
   const pending = await requestTool('terminal_run', {
     command: "Write-Output 'output-via-api'",
-    timeout_seconds: 10,
+    timeout_seconds: 30,
   }, { projectPath: memoryRoot, runId: 'api-terminal-background' });
 
   const approval = await request(`${backend.url}/api/tools/approval`, {
@@ -141,7 +141,10 @@ test('API acompanha um terminal aprovado até entregar o output final', { skip: 
   assert.equal(approved.status, 'background');
 
   let job = approved.job;
-  const deadline = Date.now() + 5_000;
+  // O PowerShell 5.1 tem inicializacao fria perceptivelmente mais lenta no
+  // runner hospedado do GitHub. Acompanhe o job dentro do proprio timeout da
+  // tool, em vez de abandonar um processo ainda valido e bloquear o cleanup.
+  const deadline = Date.now() + 20_000;
   while (job.status === 'running' && Date.now() < deadline) {
     await new Promise((resolve) => { setTimeout(resolve, 75); });
     const response = await request(`${backend.url}/api/tools/terminal-jobs/${encodeURIComponent(job.id)}`, { headers });
