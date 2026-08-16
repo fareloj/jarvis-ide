@@ -566,19 +566,29 @@ Validar os fluxos reais que testes unitários não cobrem.
 
 ### Escopo
 
-- Adicionar Playwright para Electron ou ferramenta equivalente.
-- Simular Ollama, RAG e busca web localmente.
-- Cobrir chat, streaming, aprovação, edição, arquivos, RAG, memória e skills.
-- Executar smoke test no Windows via CI.
-- Adicionar verificações básicas de acessibilidade e regressão visual.
+- [x] Adicionar Playwright para Electron ou ferramenta equivalente.
+- [x] Simular Ollama, RAG e busca web localmente.
+- [x] Cobrir chat, streaming, aprovação, edição, arquivos, RAG, memória e skills.
+- [x] Executar smoke test no Windows via CI.
+- [x] Adicionar verificações básicas de acessibilidade e regressão visual.
 
 ### Critérios de aceite
 
-- [ ] Fluxo principal roda sem serviços externos.
-- [ ] Falhas produzem screenshot e logs úteis.
-- [ ] Aprovação e recusa são exercitadas.
-- [ ] Pelo menos uma tarefa agentic completa é testada ponta a ponta.
-- [ ] CI continua dentro de um tempo aceitável.
+- [x] Fluxo principal roda sem serviços externos.
+- [x] Falhas produzem screenshot e logs úteis.
+- [x] Aprovação e recusa são exercitadas.
+- [x] Pelo menos uma tarefa agentic completa é testada ponta a ponta.
+- [x] CI continua dentro de um tempo aceitável.
+
+### Estado em 2026-08-16
+
+O runner abre o Electron real com dados de usuário isolados e serviços locais
+determinísticos para Ollama e RAG. Onze verificações cobrem navegação,
+arquivos, memória, skills, aprovação, gravação, continuidade após tool,
+edição e acessibilidade. Falhas preservam relatório, logs e screenshots.
+O smoke test foi adicionado ao CI Windows; localmente passou em 7,7 segundos
+usando um runtime Electron em cache porque o antivírus removeu novamente o
+binário instalado em `node_modules`.
 
 ---
 

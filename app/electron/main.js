@@ -223,6 +223,7 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, '..', 'src', 'index.html'));
   mainWindow.show();
   mainWindow.focus();
+  return mainWindow;
 }
 
 function registerIpc() {
@@ -880,7 +881,21 @@ app.whenReady().then(async () => {
       }
     }
 
-    createWindow();
+    const window = createWindow();
+    if (process.env.JARVIS_E2E_PROJECT && process.env.JARVIS_E2E_OUTPUT) {
+      const { runElectronE2E } = require('./e2e-runner');
+      const startE2E = async () => {
+        try {
+          await runElectronE2E(window, { projectPath: process.env.JARVIS_E2E_PROJECT, outputDirectory: process.env.JARVIS_E2E_OUTPUT });
+          app.exit(0);
+        } catch (error) {
+          console.error('Electron E2E falhou:', error);
+          app.exit(1);
+        }
+      };
+      if (window.webContents.isLoading()) window.webContents.once('did-finish-load', startE2E);
+      else startE2E();
+    }
   } catch (error) {
     console.error('Erro na inicialização do aplicativo:', error);
   }
