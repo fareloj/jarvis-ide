@@ -44,7 +44,7 @@ Não mandar frases vagas como “faça funcionar” ou “termine o projeto”. 
 - `agent`: usar exatamente `antigravity`, `codex` ou `claude-code`.
 - `prompt`: enviar o briefing autocontido.
 - `mode`: usar `plan` quando nenhuma edição for autorizada; usar `edit` para implementação.
-- `effort`: omitir por padrão para a CLI escolher um valor compatível. No Antigravity, usar somente `low` ou `high` quando houver motivo; alguns modelos rejeitam `medium`. Em Claude Code, os níveis dependem do modelo e `low`, `medium` ou `high` são os valores portáveis expostos pela tool. No Codex, o backend converte o valor em `model_reasoning_effort`; nunca prometa que um modelo aceita determinado nível sem observar a CLI.
+- `effort`: no Antigravity, usar `high` para implementação ampla, multi-arquivo ou com testes e `low` para inspeção curta; não usar `medium`, pois alguns modelos o rejeitam. Em Claude Code, `low`, `medium` ou `high` são os valores portáveis expostos pela tool. No Codex, o backend converte o valor em `model_reasoning_effort`; nunca prometa que um modelo aceita determinado nível sem observar a CLI.
 - `model`: omitir para usar a configuração da CLI; informar apenas se o usuário ou a tarefa exigir um modelo específico.
 - `timeout_seconds`: usar 300–900 para tarefas pequenas, 1800 por padrão e até 3600 para tarefas grandes.
 

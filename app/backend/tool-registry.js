@@ -837,6 +837,32 @@ const JOB_OUTPUT_LIMIT = 500_000;
 const CODING_AGENT_JOB_TOOLS = new Set([
   'delegate_coding_task', 'continue_coding_task', 'review_coding_changes', 'inspect_coding_agent',
 ]);
+const WORKSPACE_MUTATION_TOOLS = new Set([
+  'memory_save', 'project_write_file', 'project_apply_patch', 'terminal_run',
+  'delegate_coding_task', 'continue_coding_task', 'review_coding_changes',
+]);
+
+function isEphemeralTestWorkspace(projectPath) {
+  const normalized = String(projectPath || '').replace(/\\/g, '/');
+  return /(?:^|\/)(?:jarvis-electron-e2e-|jarvis-live-antigravity-)[^/]+\/(?:project|workspace)(?:\/|$)/i.test(normalized);
+}
+
+function assertWorkspaceIsNotStaleTest(projectPath) {
+  if (!isEphemeralTestWorkspace(projectPath)) return;
+  const authorizedFixture = String(process.env.JARVIS_E2E_PROJECT || '').trim();
+  if (authorizedFixture && path.resolve(authorizedFixture) === path.resolve(String(projectPath))) return;
+  throw new Error('O projeto ativo pertence a um teste E2E descartavel. Abra uma pasta real antes de executar, escrever ou delegar tarefas.');
+}
+
+function activeEquivalentDelegation(args = {}, context = {}) {
+  const workspace = path.resolve(String(context.projectPath || ''));
+  return [...backgroundJobs.values()].find((job) => (
+    job.name === 'delegate_coding_task'
+    && job.agent === args.agent
+    && path.resolve(String(job.workspace || '')) === workspace
+    && ['starting', 'running'].includes(job.status)
+  )) || null;
+}
 
 function normalizeContinuationArgs(args = {}, context = {}) {
   const supplied = String(args.session_id || '').trim();
@@ -977,6 +1003,18 @@ async function requestTool(name, args, context) {
   const definition = toolDefinition(name);
   if (!definition) throw new Error(`Tool desconhecida: ${name}`);
   if (name === 'continue_coding_task') args = normalizeContinuationArgs(args, context);
+  if (WORKSPACE_MUTATION_TOOLS.has(name)) assertWorkspaceIsNotStaleTest(context.projectPath);
+  if (name === 'delegate_coding_task') {
+    const existing = activeEquivalentDelegation(args, context);
+    if (existing) {
+      const runtime = context?.runId ? { runId: context.runId, args } : null;
+      return {
+        status: 'background', name,
+        job: { ...publicBackgroundJob(existing), reused: true },
+        _runtime: runtime,
+      };
+    }
+  }
   if (definition.policy.approval === 'never') return { status: 'completed', result: await runTool(name, args, context) };
 
   const plano = await planIfWrite(name, args, context);
@@ -1015,6 +1053,16 @@ async function executeApprovedTool(pending) {
     ? { runId: pending.context.runId, args: pending.args }
     : null;
   if (pending.name === 'terminal_run' || CODING_AGENT_JOB_TOOLS.has(pending.name)) {
+    if (pending.name === 'delegate_coding_task') {
+      const existing = activeEquivalentDelegation(pending.args, pending.context);
+      if (existing) {
+        return {
+          status: 'background', name: pending.name,
+          job: { ...publicBackgroundJob(existing), reused: true },
+          _runtime: runtime,
+        };
+      }
+    }
     return { status: 'background', name: pending.name, job: startBackgroundJob(pending), _runtime: runtime };
   }
   if (pending.plano) {
@@ -1052,6 +1100,6 @@ module.exports = {
   reviewCodingChanges,
   fileWrite, describeTools,
   runCli, listProjectDirectory, previewProjectFile, publicDefinitions,
-  normalizeContinuationArgs, requestTool, resolveApproval, resolveProjectTarget, runTool,
+  isEphemeralTestWorkspace, normalizeContinuationArgs, requestTool, resolveApproval, resolveProjectTarget, runTool,
   saveProjectFile, startBackgroundJob, statProjectFile,
 };

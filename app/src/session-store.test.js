@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createSessionStore, titleFromMessages } = require('./session-store');
+const { createSessionStore, isEphemeralTestProjectPath, titleFromMessages } = require('./session-store');
 
 class MemoryStorage {
   constructor(initial = {}) {
@@ -11,6 +11,13 @@ class MemoryStorage {
   setItem(key, value) { this.values.set(key, String(value)); }
   removeItem(key) { this.values.delete(key); }
 }
+
+test('reconhece somente workspaces descartaveis dos runners JARVIS', () => {
+  assert.equal(isEphemeralTestProjectPath('C:\\Users\\danie\\AppData\\Local\\Temp\\jarvis-electron-e2e-abc123\\project'), true);
+  assert.equal(isEphemeralTestProjectPath('/tmp/jarvis-live-antigravity-xyz/workspace'), true);
+  assert.equal(isEphemeralTestProjectPath('C:\\Users\\danie\\Documents\\meu-projeto'), false);
+  assert.equal(isEphemeralTestProjectPath('C:\\Temp\\projeto-normal'), false);
+});
 
 test('sessões são criadas, atualizadas e reabertas', () => {
   const storage = new MemoryStorage();

@@ -21,6 +21,14 @@
     return `session-${Date.now()}-${suffix}`;
   }
 
+  // Os runners E2E criam workspaces descartaveis com estes prefixos. Uma
+  // sessao de teste interrompida nao pode transformar esse fixture no projeto
+  // ativo do perfil normal, pois agentes delegados gravariam em %TEMP%.
+  function isEphemeralTestProjectPath(projectPath) {
+    const normalized = String(projectPath || '').replace(/\\/g, '/');
+    return /(?:^|\/)(?:jarvis-electron-e2e-|jarvis-live-antigravity-)[^/]+\/(?:project|workspace)(?:\/|$)/i.test(normalized);
+  }
+
   function titleFromMessages(messages) {
     const firstUser = messages.find((message) => message.role === 'user' && message.content.trim());
     if (!firstUser) return 'Nova conversa';
@@ -168,5 +176,5 @@
     return { archive, create, get, getActive, list, migrateLegacy, remove, save, setActive };
   }
 
-  return { createSessionStore, titleFromMessages };
+  return { createSessionStore, isEphemeralTestProjectPath, titleFromMessages };
 }));

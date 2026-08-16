@@ -32,8 +32,12 @@ const BASE_SYSTEM_PROMPT = [
 ].join('\n');
 const sessionStore = window.JarvisSessionStore.createSessionStore(localStorage);
 sessionStore.migrateLegacy({ fallbackProject: defaultProject, fallbackModel: defaultModel });
-const initialSession = sessionStore.getActive()
+let initialSession = sessionStore.getActive()
   || sessionStore.create({ project: defaultProject, model: defaultModel });
+if (window.JarvisSessionStore.isEphemeralTestProjectPath(initialSession.project?.path)) {
+  initialSession = sessionStore.save({ ...initialSession, project: defaultProject }, { touch: false });
+  localStorage.setItem('jarvis:project', JSON.stringify(defaultProject));
+}
 const ragProjects = JSON.parse(localStorage.getItem('jarvis:rag-projects') || '{}');
 const toolContinuationFallbacks = new Map();
 const queuedToolOutcomes = new Map();

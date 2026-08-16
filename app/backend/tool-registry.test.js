@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const {
-  delegateCodingTask, getBackgroundJob, getTerminalJob, listProjectDirectory, normalizeContinuationArgs, previewProjectFile, publicDefinitions, requestTool, resolveApproval,
+  cancelBackgroundJob, delegateCodingTask, getBackgroundJob, getTerminalJob, isEphemeralTestWorkspace, listProjectDirectory, normalizeContinuationArgs, previewProjectFile, publicDefinitions, requestTool, resolveApproval,
   resolveProjectTarget, runCli, saveProjectFile, startBackgroundJob, statProjectFile,
 } = require('./tool-registry');
 
@@ -114,6 +114,43 @@ test('delegate_coding_task exige aprovação explícita e valida entrada', async
 
   await assert.rejects(delegateCodingTask(root, 'claude-code', '   '), /não pode ser vazio/);
   await assert.rejects(delegateCodingTask(root, 'agente-inexistente', 'oi'), /desconhecido/);
+  await fs.rm(root, { recursive: true, force: true });
+});
+
+test('workspace E2E persistido nao aceita escrita ou delegacao fora do runner', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-electron-e2e-'));
+  const project = path.join(root, 'project');
+  await fs.mkdir(project);
+  assert.equal(isEphemeralTestWorkspace(project), true);
+  await assert.rejects(
+    requestTool('project_write_file', { path: 'indevido.txt', content: 'x' }, { projectPath: project, bypassCommands: true }),
+    /teste E2E descartavel/i,
+  );
+  await assert.rejects(
+    requestTool('delegate_coding_task', { agent: 'antigravity', prompt: 'crie algo' }, { projectPath: project, bypassCommands: true }),
+    /teste E2E descartavel/i,
+  );
+  await fs.rm(root, { recursive: true, force: true });
+});
+
+test('delegacao repetida reutiliza o job ativo no mesmo workspace', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-delegate-idempotent-'));
+  const first = startBackgroundJob({
+    name: 'delegate_coding_task',
+    args: { agent: 'antigravity', prompt: 'primeira tarefa' },
+    context: { projectPath: root },
+  }, async (_name, _args, context) => new Promise((resolve, reject) => {
+    context.onStarted({ pid: 7788, cwd: root });
+    context.signal.addEventListener('abort', () => reject(Object.assign(new Error('cancelado'), { cancelled: true })), { once: true });
+  }));
+
+  const repeated = await requestTool('delegate_coding_task', {
+    agent: 'antigravity', prompt: 'nao deve criar outro processo',
+  }, { projectPath: root, bypassCommands: true });
+  assert.equal(repeated.status, 'background');
+  assert.equal(repeated.job.id, first.id);
+  assert.equal(repeated.job.reused, true);
+  await cancelBackgroundJob(first.id);
   await fs.rm(root, { recursive: true, force: true });
 });
 
