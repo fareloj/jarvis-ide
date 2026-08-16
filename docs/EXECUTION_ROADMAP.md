@@ -52,6 +52,22 @@ Não misture refatorações oportunistas, mudanças visuais e funcionalidades n�
 
 Estados permitidos: `PENDENTE`, `EM ANDAMENTO`, `BLOQUEADA` e `CONCLUÍDA`.
 
+### Rebaseline de 2026-08-16
+
+Após as Tarefas 7–9, a `main` recebeu memória semântica entre conversas,
+continuação após tool calls, jobs em segundo plano, skills obrigatórias para
+CLIs de programação, seletor de modelos, quota do Ollama Cloud e o companion
+Android. Esses incrementos ampliaram a suíte para **178 testes unitários**,
+mas não concluem automaticamente as Tarefas 10–12: ainda faltam os controles
+de interface, ciclo de vida e critérios de aceite descritos em cada uma.
+
+O baseline também revelou que o script de testes dependia da expansão de
+globs pelo shell. O runner Windows/Node 20 do GitHub Actions tratava
+`backend/*.test.js` como caminho literal e deixava o CI vermelho, embora a
+suíte passasse localmente. O projeto agora enumera explicitamente somente os
+arquivos `.test.js` de `backend/` e `src/`, sem executar cópias presentes no
+staging do RAG.
+
 ---
 
 ## Fase A — Claude Code
@@ -573,6 +589,7 @@ Registre aqui problemas encontrados durante uma tarefa sem interromper o escopo 
 
 | Data | Tarefa | Resultado | Testes | Commit | Observações |
 |---|---:|---|---|---|---|
+| 2026-08-16 | Baseline | Runner de testes independente do shell para Windows/Node 20 | 178/178 | `fix(ci): make test discovery shell independent` | Evita glob literal no GitHub Actions e ignora testes copiados para `data/rag-workspace`; syntax check e suíte completa passaram localmente. A tentativa adicional via `npx node@20` foi bloqueada pelo certificado local do npm, não pelo código. |
 | 2026-08-14 | 9 | Robustecimento do runtime agentic com orçamentos, checkpoints e retry seguro | 142/142 (8 novos) | `feat(agent): harden agentic runtime with checkpoints and retry` | Orçamentos configuráveis de turnos, tokens e tempo. Compactação determinística de contexto com preservação incondicional de system prompts e metas do usuário. Checkpoints versionados (v1) e gravados atomicamente via writeAtomic com redação abrangente de segredos e tokens (redactSecrets). Prevenção de duplicidade em retries via idempotency keys baseadas em hash SHA-256 das chamadas a tools puras. Retry restrito exclusivamente a erros transitórios de rede e sobrecarga com backoff exponencial. Fila de jobs em segundo plano com gerenciamento de lifecycle e encerramento de árvore de processos por killTree. |
 | 2026-08-14 | 8 | Busca global e painel Problems com execução isolada | 134/134 (12 novos) | `feat(diagnostics): add global search and problems panel` | Busca textual e regex rápida ignorando dependências (.git, node_modules) e binários com match highlighting. Substituição multi-arquivo 100% transacional usando planPatch/applyPatch com preview de diff e rollback atômico. Executor de Problems em ambiente saneado por allowlist (sem vazamento de API keys), timeout estrito com kill de árvore de processos netos (taskkill /T /F), cancelamento via IPC e parser estruturado para TypeScript, ESLint, Python, Jest e Node test runner com navegação direta para linha e coluna no editor Monaco. |
 | 2026-08-14 | 7 | Terminal interativo PTY xterm integrado | 122/122 (9 novos) | `feat(terminal): add interactive pty session with xterm` | Compatibilidade nativa do `node-pty@1.1.0` comprovada no Electron 43 no Windows via teste real (`test-electron-pty.js`). Backend PTY isolado com ciclo de vida atrelado à janela, ao projeto e ao encerramento do app. Frontend atualizado com xterm.js 6.0.0, fit addon 0.11.0 e abas divididas entre Terminal do Usuário e Comandos da IA. Testes cobrem spawn, resize, streaming ANSI, reinício, encerramento de árvores com processos netos reais, scoping por janela e ausência total de ferramentas PTY no registro do agente. |
