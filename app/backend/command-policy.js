@@ -172,6 +172,12 @@ function decide(command, { allowSafeReads = false } = {}) {
 const ENV_BASE = [
   'PATH', 'Path', 'SystemRoot', 'windir', 'COMSPEC', 'TEMP', 'TMP', 'USERPROFILE', 'HOME',
   'HOMEDRIVE', 'HOMEPATH', 'PATHEXT', 'NUMBER_OF_PROCESSORS', 'OS', 'PROCESSOR_ARCHITECTURE',
+  // O Windows PowerShell 5.1 pode travar ainda durante o bootstrap quando e'
+  // iniciado com um ambiente minimo que omite os diretorios padrao do perfil
+  // e dos modulos. Sao apenas caminhos/identidade do Windows, nao credenciais.
+  'ALLUSERSPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'ProgramFiles',
+  'ProgramFiles(x86)', 'ProgramW6432', 'PSModulePath', 'PUBLIC', 'SystemDrive',
+  'USERNAME', 'USERDOMAIN',
 ];
 
 // Uma CLI de agente (Claude Code, Codex, Antigravity) precisa de mais que um
@@ -182,9 +188,7 @@ const ENV_BASE = [
 // que interessa a um atacante: chaves do JARVIS, do Ollama, do Tavily e o
 // token do backend local — nenhuma delas serve para autenticar essas CLIs.
 const ENV_DELEGACAO = [
-  'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'ProgramFiles', 'ProgramFiles(x86)', 'ProgramW6432',
-  'SystemDrive', 'USERNAME', 'USERDOMAIN', 'PUBLIC', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME',
-  'LANG', 'LC_ALL', 'TZ',
+  'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'LANG', 'LC_ALL', 'TZ',
 ];
 
 function pickEnv(chaves) {
