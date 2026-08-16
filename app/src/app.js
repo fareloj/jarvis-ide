@@ -674,7 +674,7 @@ function specialPage(type) {
           <div id="toolCatalog" class="capability-list"><span class="empty-copy">Carregando tools…</span></div>
         </section>
         <section class="settings-group capabilities-group">
-          <h2>Skills</h2>
+          <div class="learning-toolbar"><h2>Skills</h2><button class="button compact secondary" data-action="import-skill"><i class="ph-duotone ph-download-simple"></i>Importar</button></div>
           <div id="skillCatalog" class="capability-list"><span class="empty-copy">Carregando skills…</span></div>
         </section>
         <section class="settings-group learning-group">
@@ -802,9 +802,10 @@ async function loadCapabilities() {
           : lifecycle.state === 'archived'
             ? `<button class="skill-policy-action" data-skill-policy="${escapeHtml(skill.id)}" data-policy-action="reactivate">Reativar</button>`
             : `<button class="skill-policy-action" data-skill-policy="${escapeHtml(skill.id)}" data-policy-action="pin">${lifecycle.pinned ? 'Desafixar' : 'Fixar'}</button>`;
+        const resources = skill.resources || [];
         return `
-        <div class="capability-row"><span><strong>${escapeHtml(skill.name)}</strong><small>${escapeHtml(skill.description)} · ${escapeHtml(stateLabel)}${lifecycle.pinned ? ' · fixada' : ''}</small></span>
-          <span class="skill-policy-controls">${policyAction}<input type="checkbox" data-skill-id="${escapeHtml(skill.id)}" ${state.activeSkills.includes(skill.id) && lifecycle.state !== 'archived' ? 'checked' : ''} ${lifecycle.state === 'archived' ? 'disabled' : ''}></span></div>`;
+        <div class="capability-row"><span><strong>${escapeHtml(skill.name)}</strong><small>${escapeHtml(skill.description)} · ${escapeHtml(stateLabel)}${lifecycle.pinned ? ' · fixada' : ''} · ${resources.length} recurso(s)</small>${resources.length ? `<details><summary>Recursos</summary><small>${resources.map((resource) => escapeHtml(resource.path)).join(' · ')}</small></details>` : ''}</span>
+          <span class="skill-policy-controls"><button class="skill-policy-action" data-skill-export="${escapeHtml(skill.id)}">Exportar</button>${policyAction}<input type="checkbox" data-skill-id="${escapeHtml(skill.id)}" ${state.activeSkills.includes(skill.id) && lifecycle.state !== 'archived' ? 'checked' : ''} ${lifecycle.state === 'archived' ? 'disabled' : ''}></span></div>`;
       }).join('');
     }
     if (toolTarget) {
@@ -820,7 +821,7 @@ async function loadCapabilities() {
 }
 
 function skillReviewCard(proposal) {
-  const statusLabel = { pending: 'aguardando revisão', applied: 'aplicada', rejected: 'descartada' }[proposal.status] || proposal.status;
+  const statusLabel = { pending: 'aguardando revisão', applied: 'aplicada', rejected: 'descartada', rolled_back: 'revertida' }[proposal.status] || proposal.status;
   const confidence = Math.round((Number(proposal.confidence) || 0) * 100);
   const evidence = proposal.evidence?.signals?.join(' · ') || 'revisão manual';
   return `<article class="skill-review-card ${escapeHtml(proposal.status)}">
@@ -837,7 +838,7 @@ function skillReviewCard(proposal) {
     ${proposal.status === 'pending' ? `<div class="skill-review-actions">
       <button class="button compact secondary" data-skill-review-id="${escapeHtml(proposal.id)}" data-review-approved="false">Descartar</button>
       <button class="button compact primary" data-skill-review-id="${escapeHtml(proposal.id)}" data-review-approved="true">Aplicar revisão</button>
-    </div>` : ''}
+    </div>` : proposal.status === 'applied' ? `<div class="skill-review-actions"><button class="button compact secondary" data-skill-rollback="${escapeHtml(proposal.id)}">Reverter aplicação</button></div>` : ''}
   </article>`;
 }
 
@@ -2795,6 +2796,44 @@ async function loadMemories(query = $('#memorySearch')?.value || '') {
   }
 }
 
+async function rollbackSkillReview(id) {
+  const confirmed = await confirmDialog({
+    title: 'Reverter skill',
+    message: 'Restaurar a versão anterior? O rollback será bloqueado se a skill tiver mudado desde a aplicação.',
+    confirmLabel: 'Reverter',
+    danger: true,
+  });
+  if (!confirmed) return;
+  try {
+    await bridge.skills.rollbackReview({ id });
+    toast('Skill revertida', 'A versão anterior foi restaurada com trilha de auditoria.');
+    await Promise.all([loadSkillReviews(), loadCapabilities()]);
+  } catch (error) {
+    toast('Falha no rollback', error.message, 'error');
+  }
+}
+
+async function exportSkill(skillId) {
+  try {
+    const result = await bridge.skills.export({ skillId });
+    if (!result.cancelled) toast('Skill exportada', result.filePath);
+  } catch (error) {
+    toast('Falha ao exportar', error.message, 'error');
+  }
+}
+
+async function importSkill() {
+  try {
+    const result = await bridge.skills.import();
+    if (!result.cancelled) {
+      toast('Skill importada', `${result.skill.id} foi adicionada ao catálogo.`);
+      await loadCapabilities();
+    }
+  } catch (error) {
+    toast('Falha ao importar', error.message, 'error');
+  }
+}
+
 function renderRagProgress(job) {
   const target = $('#ragProgress');
   if (!target) return;
@@ -3620,6 +3659,18 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  const skillRollbackTarget = event.target.closest('[data-skill-rollback]');
+  if (skillRollbackTarget) {
+    await rollbackSkillReview(skillRollbackTarget.dataset.skillRollback);
+    return;
+  }
+
+  const skillExportTarget = event.target.closest('[data-skill-export]');
+  if (skillExportTarget) {
+    await exportSkill(skillExportTarget.dataset.skillExport);
+    return;
+  }
+
   const memoryEditTarget = event.target.closest('[data-memory-edit]');
   if (memoryEditTarget) {
     const memory = ($('#memoryList')?._memories || []).find((item) => item.id === memoryEditTarget.dataset.memoryEdit);
@@ -3868,6 +3919,7 @@ document.addEventListener('click', async (event) => {
   }
   if (action === 'review-skills-now') runSkillReview({ manual: true });
   if (action === 'curate-skills') curateSkills();
+  if (action === 'import-skill') importSkill();
   if (action === 'rag-refresh') checkRagHealth();
   if (action === 'rag-index') indexCurrentProject();
   if (action === 'rag-cancel-index') cancelRagIndex();

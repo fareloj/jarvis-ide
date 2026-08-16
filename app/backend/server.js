@@ -16,7 +16,7 @@ const {
   updateMemory,
 } = require('./memory-store');
 const {
-  formatSkillsForPrompt, listSkills, loadActiveSkills, loadSkill, requiredSkillForTool,
+  formatSkillsForPrompt, listSkills, loadActiveSkills, loadSkill, readSkillResource, requiredSkillForTool,
 } = require('./skill-loader');
 const tools = require('./tool-registry');
 const quota = require('./quota-monitor');
@@ -519,8 +519,19 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
       if (request.method === 'GET' && request.url === '/api/skills') {
         const states = await skillReview.listSkillStates();
         sendJson(response, 200, {
-          skills: (await listSkills()).map(({ content, ...skill }) => ({ ...skill, lifecycle: states[skill.id] || null })),
+          skills: (await listSkills({ includeArchived: true })).map(({ content, ...skill }) => ({ ...skill, lifecycle: states[skill.id] || null })),
         });
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/skills/view') {
+        const body = await readJson(request);
+        const skill = await loadSkill(body.skillId, { includeArchived: true });
+        if (!skill) throw new Error('Skill inexistente.');
+        await skillReview.recordUsage({ skillIds: [skill.id], event: 'viewed' });
+        sendJson(response, 200, body.resourcePath
+          ? { skill: { id: skill.id, name: skill.name }, resource: await readSkillResource(skill.id, body.resourcePath) }
+          : { skill });
         return;
       }
 
@@ -651,6 +662,24 @@ function startBackend({ host = process.env.JARVIS_BACKEND_HOST || '127.0.0.1', p
             sessionId: body.sessionId,
           }),
         });
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/skills/reviews/rollback') {
+        const body = await readJson(request);
+        sendJson(response, 200, await skillReview.rollback(body.id));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/skills/export') {
+        const body = await readJson(request);
+        sendJson(response, 200, { document: await skillReview.exportSkill(body.skillId) });
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/skills/import') {
+        const body = await readJson(request, 25_000_000);
+        sendJson(response, 200, { skill: await skillReview.importSkill(body.document, { overwrite: body.overwrite === true, adopt: body.adopt === true }) });
         return;
       }
 

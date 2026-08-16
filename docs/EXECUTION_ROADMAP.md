@@ -466,11 +466,22 @@ Evoluir a revisão contínua já implementada para um sistema completo e auditá
 
 ### Critérios de aceite
 
-- [ ] Skills do usuário nunca são administradas sem adoção explícita.
-- [ ] Toda escrita continua exigindo aprovação.
-- [ ] Revisor cancelado não contamina a conversa principal.
-- [ ] Rollback restaura todos os arquivos da alteração.
-- [ ] Skills arquivadas deixam de entrar no contexto.
+- [x] Skills do usuário nunca são administradas sem adoção explícita.
+- [x] Toda escrita continua exigindo aprovação.
+- [x] Revisor cancelado não contamina a conversa principal.
+- [x] Rollback restaura todos os arquivos da alteração.
+- [x] Skills arquivadas deixam de entrar no contexto.
+
+### Estado em 2026-08-16
+
+O catálogo agora usa descoberta progressiva por `skill_view`, inventaria recursos
+permitidos com limites de tamanho e exclui skills arquivadas do contexto. O
+curador só altera skills adotadas explicitamente. Propostas mantêm diff,
+proveniência, backup e rollback com verificação de hash para não sobrescrever
+mudanças posteriores. Pacotes JSON versionados permitem importar e exportar o
+`SKILL.md` e seus recursos; paths arbitrários, pacotes corrompidos e escritas sem
+confirmação são recusados. A suíte cobre adoção, concorrência, rollback,
+importação, exportação e traversal.
 
 ---
 

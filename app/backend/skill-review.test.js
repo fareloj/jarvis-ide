@@ -52,6 +52,7 @@ test('aprovação aplica a revisão e mantém backup do conteúdo anterior', asy
   const reviewed = await env.reviewer.review({
     messages: [{ role: 'user', content: 'Teste' }, { role: 'assistant', content: 'Validado' }], activeSkills: ['testing'],
   });
+  await env.reviewer.setSkillPolicy('testing', { adopt: true });
   await env.reviewer.resolve(reviewed.proposal.id, true);
   assert.match(await fs.readFile(path.join(env.skillsRoot, 'testing', 'SKILL.md'), 'utf8'), /confirme a saída/);
   assert.equal(await fs.readFile(path.join(env.reviewRoot, 'backups', reviewed.proposal.id, 'SKILL.md'), 'utf8'), env.markdown);
@@ -66,6 +67,7 @@ test('aprovação recusa sobrescrever uma skill alterada depois da proposta', as
   const reviewed = await env.reviewer.review({
     messages: [{ role: 'user', content: 'Teste' }, { role: 'assistant', content: 'Validado' }], activeSkills: ['testing'],
   });
+  await env.reviewer.setSkillPolicy('testing', { adopt: true });
   await fs.writeFile(path.join(env.skillsRoot, 'testing', 'SKILL.md'), `${env.markdown}\n\nAlteração posterior.`);
   await assert.rejects(
     env.reviewer.resolve(reviewed.proposal.id, true),
@@ -82,6 +84,7 @@ test('aprovação concorrente aplica uma proposta uma única vez', async (t) => 
   const reviewed = await env.reviewer.review({
     messages: [{ role: 'user', content: 'Teste' }, { role: 'assistant', content: 'Validado' }], activeSkills: ['testing'],
   });
+  await env.reviewer.setSkillPolicy('testing', { adopt: true });
   const outcomes = await Promise.allSettled([
     env.reviewer.resolve(reviewed.proposal.id, true),
     env.reviewer.resolve(reviewed.proposal.id, true),
@@ -140,4 +143,40 @@ test('curador só arquiva skills gerenciadas e nunca remove seus arquivos', asyn
   await env.reviewer.curate({ now: future, apply: true });
   assert.equal((await env.reviewer.listSkillStates()).testing.state, 'archived');
   assert.ok(await fs.readFile(path.join(env.skillsRoot, 'testing', 'SKILL.md'), 'utf8'));
+});
+
+test('curador recusa alterar uma skill do usuário antes da adoção explícita', async (t) => {
+  const proposed = '---\nid: testing\nname: Testing\ndescription: Testar software com verificação\n---\n\n# Testing\n\nExecute os testes e confirme a saída antes de concluir.';
+  const env = await fixture(async () => JSON.stringify({ action: 'update', skillId: 'testing', reason: 'Melhoria.', confidence: 0.9, proposedContent: proposed }));
+  t.after(() => fs.rm(env.root, { recursive: true, force: true }));
+  const reviewed = await env.reviewer.review({ messages: [{ role: 'user', content: 'Teste' }, { role: 'assistant', content: 'Validado' }], activeSkills: ['testing'] });
+  await assert.rejects(env.reviewer.resolve(reviewed.proposal.id, true), /Adote esta skill/);
+  assert.equal(await fs.readFile(path.join(env.skillsRoot, 'testing', 'SKILL.md'), 'utf8'), env.markdown);
+});
+
+test('rollback restaura exatamente a versão anterior aplicada', async (t) => {
+  const proposed = '---\nid: testing\nname: Testing\ndescription: Testar software com rollback\n---\n\n# Testing\n\nExecute, valide e registre os testes.';
+  const env = await fixture(async () => JSON.stringify({ action: 'update', skillId: 'testing', reason: 'Melhoria.', confidence: 0.9, proposedContent: proposed }));
+  t.after(() => fs.rm(env.root, { recursive: true, force: true }));
+  const reviewed = await env.reviewer.review({ messages: [{ role: 'user', content: 'Teste' }, { role: 'assistant', content: 'Validado' }], activeSkills: ['testing'] });
+  await env.reviewer.setSkillPolicy('testing', { adopt: true });
+  await env.reviewer.resolve(reviewed.proposal.id, true);
+  const result = await env.reviewer.rollback(reviewed.proposal.id);
+  assert.equal(result.proposal.status, 'rolled_back');
+  assert.equal(await fs.readFile(path.join(env.skillsRoot, 'testing', 'SKILL.md'), 'utf8'), env.markdown);
+});
+
+test('exporta e importa SKILL.md e recursos sem permitir paths arbitrários', async (t) => {
+  const env = await fixture(async () => '{"action":"none"}');
+  t.after(() => fs.rm(env.root, { recursive: true, force: true }));
+  await fs.mkdir(path.join(env.skillsRoot, 'testing', 'references'), { recursive: true });
+  await fs.writeFile(path.join(env.skillsRoot, 'testing', 'references', 'checklist.md'), 'Checklist seguro');
+  const document = await env.reviewer.exportSkill('testing');
+  await fs.rm(path.join(env.skillsRoot, 'testing'), { recursive: true, force: true });
+  const imported = await env.reviewer.importSkill(document);
+  assert.equal(imported.id, 'testing');
+  assert.equal(await fs.readFile(path.join(env.skillsRoot, 'testing', 'references', 'checklist.md'), 'utf8'), 'Checklist seguro');
+  const forged = structuredClone(document);
+  forged.files.push({ path: '../escape.txt', encoding: 'base64', content: Buffer.from('x').toString('base64') });
+  await assert.rejects(env.reviewer.importSkill(forged, { overwrite: true }), /fora das pastas/);
 });

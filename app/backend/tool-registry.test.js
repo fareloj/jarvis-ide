@@ -16,6 +16,13 @@ test('publicDefinitions pode omitir tools já satisfeitas pelo contexto', () => 
   assert.equal(definitions.some((item) => item.function.name === 'memory_save'), true);
 });
 
+test('skill_view oferece descoberta progressiva sem aprovação', async () => {
+  const result = await requestTool('skill_view', { skill_id: 'delegate-coding-agent' }, {});
+  assert.equal(result.status, 'completed');
+  assert.equal(result.result.skill.id, 'delegate-coding-agent');
+  assert.match(result.result.skill.content, /deleg/i);
+});
+
 test('tools de arquivo permanecem confinadas ao projeto', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-tool-'));
   await fs.writeFile(path.join(root, 'hello.txt'), 'olá', 'utf8');

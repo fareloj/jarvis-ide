@@ -519,6 +519,56 @@ function registerIpc() {
     if (!response.ok) throw new Error(data.error || 'Falha ao resolver a revisão de skill.');
     return data;
   });
+  ipcMain.handle('skills:rollback-review', async (_event, payload) => {
+    const response = await backendFetch('/api/skills/reviews/rollback', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao reverter a revisÃ£o de skill.');
+    return data;
+  });
+  ipcMain.handle('skills:view', async (_event, payload) => {
+    const response = await backendFetch('/api/skills/view', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao carregar a skill.');
+    return data;
+  });
+  ipcMain.handle('skills:export', async (_event, payload) => {
+    const response = await backendFetch('/api/skills/export', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao exportar a skill.');
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Exportar skill do JARVIS', defaultPath: `${payload.skillId}.jarvis-skill.json`,
+      filters: [{ name: 'Pacote de skill', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePath) return { cancelled: true };
+    await fs.promises.writeFile(result.filePath, `${JSON.stringify(data.document, null, 2)}\n`, 'utf8');
+    return { cancelled: false, filePath: result.filePath };
+  });
+  ipcMain.handle('skills:import', async () => {
+    const selected = await dialog.showOpenDialog(mainWindow, {
+      title: 'Importar skill do JARVIS', properties: ['openFile'], filters: [{ name: 'Pacote de skill', extensions: ['json'] }],
+    });
+    if (selected.canceled || !selected.filePaths[0]) return { cancelled: true };
+    const document = JSON.parse(await fs.promises.readFile(selected.filePaths[0], 'utf8'));
+    const confirmation = await dialog.showMessageBox(mainWindow, {
+      type: 'warning', buttons: ['Cancelar', 'Importar'], defaultId: 0, cancelId: 0,
+      title: 'Confirmar importaÃ§Ã£o', message: `Importar a skill ${document.id || 'sem id'}?`,
+      detail: 'Se uma skill com este id existir, uma cÃ³pia de seguranÃ§a serÃ¡ preservada antes da substituiÃ§Ã£o.',
+    });
+    if (confirmation.response !== 1) return { cancelled: true };
+    const response = await backendFetch('/api/skills/import', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ document, overwrite: true, adopt: false }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha ao importar a skill.');
+    return { cancelled: false, ...data };
+  });
   ipcMain.handle('skills:curate', async (_event, payload) => {
     const response = await backendFetch('/api/skills/curate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),

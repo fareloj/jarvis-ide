@@ -11,6 +11,7 @@ const { searchWeb } = require('./web-search');
 const fileWrite = require('./file-write');
 const commandPolicy = require('./command-policy');
 const codingAgents = require('./coding-agent-cli');
+const { loadSkill, readSkillResource } = require('./skill-loader');
 
 const execFileAsync = promisify(execFile);
 const pendingApprovals = new Map();
@@ -80,6 +81,22 @@ const DEFINITIONS = Object.freeze([
       name: 'project_read_file',
       description: 'Lê um arquivo de texto dentro do projeto aberto.',
       parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+    },
+    policy: { risk: 'read', approval: 'never' },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'skill_view',
+      description: 'Carrega as instruÃ§Ãµes completas de uma skill ou um recurso listado nela. Use o catÃ¡logo de skills do prompt para escolher o id.',
+      parameters: {
+        type: 'object',
+        properties: {
+          skill_id: { type: 'string', description: 'Identificador da skill no catÃ¡logo.' },
+          resource_path: { type: 'string', description: 'Caminho opcional de references/, templates/, scripts/ ou assets/.' },
+        },
+        required: ['skill_id'],
+      },
     },
     policy: { risk: 'read', approval: 'never' },
   },
@@ -726,6 +743,12 @@ async function runTool(name, args = {}, context = {}) {
       saved.indexJob = ragIndexJobs.start({ projectPath });
     }
     return saved;
+  }
+  if (name === 'skill_view') {
+    const skill = await loadSkill(args.skill_id);
+    if (!skill) throw new Error('Skill inexistente ou arquivada.');
+    if (args.resource_path) return { skill: { id: skill.id, name: skill.name }, resource: await readSkillResource(skill.id, args.resource_path) };
+    return { skill };
   }
   if (name === 'terminal_run') {
     const command = String(args.command || '').trim();

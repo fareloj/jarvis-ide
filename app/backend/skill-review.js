@@ -1,12 +1,15 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { SKILLS_ROOT, listSkills } = require('./skill-loader');
+const { ALLOWED_RESOURCE_ROOTS, SKILLS_ROOT, listSkills } = require('./skill-loader');
 
 const REVIEW_ROOT = path.resolve(process.env.JARVIS_SKILL_REVIEW_PATH || path.join(__dirname, '..', 'data', 'skill-reviews'));
 const PROPOSALS_FILE = 'proposals.json';
 const USAGE_FILE = 'usage.json';
 const JOBS_FILE = 'jobs.json';
+const PACKAGE_VERSION = 1;
+const MAX_PACKAGE_FILES = 200;
+const MAX_PACKAGE_BYTES = 20_000_000;
 const VALID_SKILL_ID = /^[a-z0-9][a-z0-9-]{1,79}$/;
 const CORRECTION_PATTERN = /\b(?:n[aã]o|errado|corrig|na verdade|voc[eê] esqueceu|deveria|em vez de|funcionou assim)\b/i;
 const VERIFICATION_PATTERN = /\b(?:test(?:e|es|ado|aram)?|valid(?:ei|ado|ou)|confirm(?:ei|ado|ou)|passou|sucesso|resolvido|funcionou)\b/i;
@@ -16,7 +19,29 @@ function createId(prefix = 'review') {
 }
 
 function hashContent(value) {
-  return crypto.createHash('sha256').update(String(value || '')).digest('hex');
+  const input = Buffer.isBuffer(value) ? value : String(value || '');
+  return crypto.createHash('sha256').update(input).digest('hex');
+}
+
+function assertSkillId(skillId) {
+  const normalized = String(skillId || '').trim();
+  if (!VALID_SKILL_ID.test(normalized)) throw new Error('Identificador de skill invÃ¡lido.');
+  return normalized;
+}
+
+function safeSkillPath(skillsRoot, skillId) {
+  const target = path.resolve(skillsRoot, assertSkillId(skillId));
+  if (path.dirname(target) !== skillsRoot) throw new Error('Destino da skill fora do catÃ¡logo permitido.');
+  return target;
+}
+
+function validateResourcePath(relativePath) {
+  const normalized = String(relativePath || '').replaceAll('\\', '/').replace(/^\/+/, '');
+  const [category] = normalized.split('/');
+  if (!ALLOWED_RESOURCE_ROOTS.has(category) || normalized.includes('../')) {
+    throw new Error('O pacote contÃ©m um recurso fora das pastas permitidas.');
+  }
+  return normalized;
 }
 
 function parseModelJson(value) {
@@ -282,6 +307,100 @@ function createSkillReview(options = {}) {
     });
   }
 
+  async function exportSkill(skillId) {
+    const id = assertSkillId(skillId);
+    const skillDirectory = safeSkillPath(skillsRoot, id);
+    const files = [];
+    const skillMarkdown = await fs.readFile(path.join(skillDirectory, 'SKILL.md'));
+    files.push({ path: 'SKILL.md', encoding: 'base64', content: skillMarkdown.toString('base64'), hash: hashContent(skillMarkdown) });
+    let totalBytes = skillMarkdown.length;
+    async function walk(directory) {
+      const entries = await fs.readdir(directory, { withFileTypes: true }).catch((error) => {
+        if (error.code === 'ENOENT') return [];
+        throw error;
+      });
+      for (const entry of entries) {
+        if (entry.isSymbolicLink()) continue;
+        const absolute = path.join(directory, entry.name);
+        if (entry.isDirectory()) await walk(absolute);
+        else if (entry.isFile()) {
+          const relative = path.relative(skillDirectory, absolute).replaceAll('\\', '/');
+          validateResourcePath(relative);
+          const content = await fs.readFile(absolute);
+          totalBytes += content.length;
+          if (files.length >= MAX_PACKAGE_FILES || totalBytes > MAX_PACKAGE_BYTES) throw new Error('A skill excede os limites de exportaÃ§Ã£o.');
+          files.push({ path: relative, encoding: 'base64', content: content.toString('base64'), hash: hashContent(content) });
+        }
+      }
+    }
+    for (const category of ALLOWED_RESOURCE_ROOTS) await walk(path.join(skillDirectory, category));
+    return { version: PACKAGE_VERSION, kind: 'jarvis-skill', id, exportedAt: new Date().toISOString(), files };
+  }
+
+  async function importSkill(document, { overwrite = false, adopt = false } = {}) {
+    if (!document || document.version !== PACKAGE_VERSION || document.kind !== 'jarvis-skill') throw new Error('Pacote de skill incompatÃ­vel.');
+    const id = assertSkillId(document.id);
+    const files = Array.isArray(document.files) ? document.files : [];
+    if (!files.length || files.length > MAX_PACKAGE_FILES) throw new Error('Pacote de skill sem arquivos vÃ¡lidos.');
+    const normalized = [];
+    let totalBytes = 0;
+    for (const file of files) {
+      const relative = file.path === 'SKILL.md' ? 'SKILL.md' : validateResourcePath(file.path);
+      if (normalized.some((item) => item.path === relative)) throw new Error('Pacote de skill contÃ©m caminhos duplicados.');
+      if (file.encoding !== 'base64') throw new Error('CodificaÃ§Ã£o de pacote nÃ£o suportada.');
+      const content = Buffer.from(String(file.content || ''), 'base64');
+      totalBytes += content.length;
+      if (totalBytes > MAX_PACKAGE_BYTES || (file.hash && hashContent(content) !== file.hash)) throw new Error('Pacote de skill corrompido ou grande demais.');
+      normalized.push({ path: relative, content });
+    }
+    const markdownFile = normalized.find((file) => file.path === 'SKILL.md');
+    if (!markdownFile) throw new Error('O pacote nÃ£o contÃ©m SKILL.md.');
+    const markdown = markdownFile.content.toString('utf8');
+    const frontmatterId = markdown.match(/^---\r?\n[\s\S]*?^id:\s*([^\r\n]+)\s*$[\s\S]*?^---\s*$/m)?.[1]?.trim();
+    if (frontmatterId !== id) throw new Error('O id do SKILL.md nÃ£o corresponde ao pacote.');
+
+    return serialize(async () => {
+      const target = safeSkillPath(skillsRoot, id);
+      const exists = await fs.access(target).then(() => true).catch(() => false);
+      if (exists && !overwrite) throw new Error('A skill jÃ¡ existe. Confirme a substituiÃ§Ã£o para importar.');
+      const temporary = path.join(skillsRoot, `.import-${id}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`);
+      const backup = path.join(reviewRoot, 'import-backups', `${id}-${Date.now()}`);
+      const previousUsage = await readJson(usagePath, {});
+      await fs.mkdir(temporary, { recursive: true });
+      try {
+        for (const file of normalized) {
+          const destination = path.resolve(temporary, file.path);
+          if (!destination.startsWith(`${temporary}${path.sep}`)) throw new Error('Caminho invÃ¡lido no pacote.');
+          await fs.mkdir(path.dirname(destination), { recursive: true });
+          await fs.writeFile(destination, file.content);
+        }
+        if (exists) { await fs.mkdir(path.dirname(backup), { recursive: true }); await fs.rename(target, backup); }
+        await fs.rename(temporary, target);
+        const usage = structuredClone(previousUsage);
+        const record = normalizeUsageRecord(usage[id]);
+        record.provenance = 'imported';
+        record.curatorManaged = adopt === true;
+        record.state = 'active';
+        record.updatedAt = new Date().toISOString();
+        usage[id] = record;
+        await writeJsonAtomic(usagePath, usage);
+        return { id, replaced: exists, backup: exists ? backup : null };
+      } catch (error) {
+        await fs.rm(temporary, { recursive: true, force: true }).catch(() => {});
+        const targetExists = await fs.access(target).then(() => true).catch(() => false);
+        const backupExists = await fs.access(backup).then(() => true).catch(() => false);
+        if (backupExists) {
+          if (targetExists) await fs.rm(target, { recursive: true, force: true }).catch(() => {});
+          await fs.rename(backup, target).catch(() => {});
+        } else if (!exists && targetExists) {
+          await fs.rm(target, { recursive: true, force: true }).catch(() => {});
+        }
+        await writeJsonAtomic(usagePath, previousUsage).catch(() => {});
+        throw error;
+      }
+    });
+  }
+
   async function persistJob(job) {
     return mutateJson(jobsPath, [], (jobs) => {
       const index = jobs.findIndex((item) => item.id === job.id);
@@ -389,6 +508,13 @@ function createSkillReview(options = {}) {
         return { proposal };
       }
 
+      if (proposal.action === 'update') {
+        const usage = await readJson(usagePath, {});
+        if (!normalizeUsageRecord(usage[proposal.skillId]).curatorManaged) {
+          throw new Error('Adote esta skill antes de permitir alteraÃ§Ãµes pelo curador.');
+        }
+      }
+
       if (!VALID_SKILL_ID.test(proposal.skillId)) throw new Error('Identificador de skill inválido.');
       const skillDirectory = path.resolve(skillsRoot, proposal.skillId);
       if (path.dirname(skillDirectory) !== skillsRoot) throw new Error('Destino da skill fora do catálogo permitido.');
@@ -441,6 +567,36 @@ function createSkillReview(options = {}) {
     });
   }
 
+  async function rollback(proposalId) {
+    return serialize(async () => {
+      const proposals = await readJson(proposalsPath, []);
+      const proposal = proposals.find((item) => item.id === String(proposalId || ''));
+      if (!proposal) throw new Error('Proposta de skill inexistente.');
+      if (proposal.status !== 'applied') throw new Error('Somente propostas aplicadas podem ser revertidas.');
+      const skillDirectory = safeSkillPath(skillsRoot, proposal.skillId);
+      const target = path.join(skillDirectory, 'SKILL.md');
+      const current = await fs.readFile(target, 'utf8');
+      if (hashContent(current.trim()) !== proposal.proposedHash) {
+        throw new Error('A skill mudou depois da aplicaÃ§Ã£o. O rollback foi bloqueado para nÃ£o perder trabalho recente.');
+      }
+      const rollbackBackup = path.join(reviewRoot, 'rollback-backups', proposal.id, 'SKILL.md');
+      await fs.mkdir(path.dirname(rollbackBackup), { recursive: true });
+      await fs.copyFile(target, rollbackBackup);
+      if (proposal.action === 'update') {
+        const original = path.join(reviewRoot, 'backups', proposal.id, 'SKILL.md');
+        await fs.copyFile(original, target);
+      } else {
+        const entries = await fs.readdir(skillDirectory);
+        if (entries.some((entry) => entry !== 'SKILL.md')) throw new Error('A skill criada ganhou recursos; remova-os manualmente antes do rollback.');
+        await fs.rm(skillDirectory, { recursive: true, force: true });
+      }
+      proposal.status = 'rolled_back';
+      proposal.rollbackAt = new Date().toISOString();
+      await writeJsonAtomic(proposalsPath, proposals);
+      return { proposal };
+    });
+  }
+
   async function curate({ now = new Date(), staleDays = 30, archiveDays = 90, apply = false } = {}) {
     const timestamp = now instanceof Date ? now : new Date(now);
     const dayMs = 86_400_000;
@@ -468,7 +624,8 @@ function createSkillReview(options = {}) {
   }
 
   return {
-    cancelReview, curate, listProposals, listSkillStates, recordUsage, resolve, review, setSkillPolicy,
+    cancelReview, curate, exportSkill, importSkill, listProposals, listSkillStates,
+    recordUsage, resolve, review, rollback, setSkillPolicy,
   };
 }
 

@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
-  TOOL_SKILL_REQUIREMENTS, loadSkill, parseSkill, requiredSkillForTool,
+  TOOL_SKILL_REQUIREMENTS, listResources, loadSkill, parseSkill, readSkillResource, requiredSkillForTool,
 } = require('./skill-loader');
 
 test('mapeia tools operacionais para skills obrigatorias', () => {
@@ -30,4 +30,10 @@ test('parser usa o nome da pasta como id quando o frontmatter nao declara id', (
   const skill = parseSkill('---\nname: Exemplo\ndescription: Teste\n---\nProcedimento.', 'exemplo');
   assert.equal(skill.id, 'exemplo');
   assert.equal(skill.content, 'Procedimento.');
+});
+
+test('catálogo lista recursos permitidos e bloqueia traversal', async () => {
+  const resources = await listResources('delegate-coding-agent');
+  assert.ok(Array.isArray(resources));
+  await assert.rejects(readSkillResource('delegate-coding-agent', '../SKILL.md'), /fora das pastas/);
 });
