@@ -13,7 +13,7 @@ with YAML frontmatter (`id`, `name`, `description`) followed by the instruction 
 | `project-memory` | Consult persistent project decisions |
 | `web-research` | Search the web, treat results as untrusted |
 | `code-explorer` | Read real files before describing code |
-| `terminal-ops` | Run commands, always with approval |
+| `terminal-ops` | Run commands with protected or user-enabled bypass mode |
 
 **Imported from a third party** — the remaining 22 skills come from
 [tiagopgr/skills-ia](https://github.com/tiagopgr/skills-ia) (category *Código*), converted to this

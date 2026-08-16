@@ -274,6 +274,27 @@ test('modo bypass inicia terminal sem criar aprovação', { skip: !ehWindows }, 
   await fs.rm(root, { recursive: true, force: true });
 });
 
+test('modo bypass aplica escrita e memória sem criar cards de aprovação', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-all-tools-bypass-'));
+  const context = { projectPath: root, bypassCommands: true, runId: 'runtime-all-tools-bypass' };
+
+  const written = await requestTool('project_write_file', {
+    path: 'bypass.txt', content: 'gravado sem card\n',
+  }, context);
+  assert.equal(written.status, 'completed');
+  assert.equal('approval' in written, false);
+  assert.equal(await fs.readFile(path.join(root, 'bypass.txt'), 'utf8'), 'gravado sem card\n');
+
+  const remembered = await requestTool('memory_save', {
+    title: 'Bypass validado', content: 'A memória foi salva sem card.', kind: 'context',
+  }, context);
+  assert.equal(remembered.status, 'completed');
+  assert.equal('approval' in remembered, false);
+  assert.match(remembered.result.memory.title, /Bypass validado/);
+
+  await fs.rm(root, { recursive: true, force: true });
+});
+
 // A CLI delegada abre o próprio runtime e o shell das tools: matar só o
 // processo que abrimos deixaria essa descendência viva dentro do projeto.
 const SCRIPT_COM_NETO = `

@@ -29,4 +29,4 @@ Timeout não significa sucesso parcial. Quando ocorrer, a árvore de processos �
 
 Após aprovação, `terminal_run` retorna um job. Guardar o `job_id` e usar `background_job_status`; não executar o comando novamente para conferir. Só afirmar sucesso quando o estado for `completed`, `exitCode` for zero e o output confirmar o objetivo. Em `failed`, `timeout` ou `cancelled`, relatar stderr, código de saída e evidência parcial sem inventar causa.
 
-O modo bypass remove a aprovação por comando, mas não remove confinamento, bloqueios de segurança, timeout nem a obrigação de verificar o resultado.
+O modo bypass representa autorização persistente do usuário e remove cards de aprovação de todas as tools enquanto estiver ativo, mas não remove confinamento, bloqueios de segurança, sandbox, timeout, auditoria, cancelamento nem a obrigação de verificar o resultado.

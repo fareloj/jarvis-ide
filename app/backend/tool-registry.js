@@ -979,19 +979,21 @@ async function requestTool(name, args, context) {
   if (name === 'continue_coding_task') args = normalizeContinuationArgs(args, context);
   if (definition.policy.approval === 'never') return { status: 'completed', result: await runTool(name, args, context) };
 
-  if (name === 'terminal_run' && context.bypassCommands === true) {
-    const command = String(args.command || '').trim();
-    const decisao = commandPolicy.decide(command);
-    if (!decisao.permitido) throw new Error(decisao.motivo);
-    commandPolicy.assertBypassCommandAllowed(command, context.projectPath);
-    return {
-      status: 'background',
-      name,
-      job: startBackgroundJob({ name, args, context, createdAt: Date.now() }),
-    };
+  const plano = await planIfWrite(name, args, context);
+  if (context.bypassCommands === true) {
+    // O bypass e' uma autorizacao persistente dada pelo usuario na interface:
+    // nenhuma tool deve criar um card enquanto estiver ativo. As fronteiras da
+    // operacao continuam valendo (workspace, plano transacional, sandbox,
+    // System32, timeout, ambiente saneado, auditoria e cancelamento).
+    if (name === 'terminal_run') {
+      const command = String(args.command || '').trim();
+      const decisao = commandPolicy.decide(command);
+      if (!decisao.permitido) throw new Error(decisao.motivo);
+      commandPolicy.assertBypassCommandAllowed(command, context.projectPath);
+    }
+    return executeApprovedTool({ name, args, context, plano, createdAt: Date.now() });
   }
 
-  const plano = await planIfWrite(name, args, context);
   const id = `approval-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   pendingApprovals.set(id, { id, name, args, context, plano, createdAt: Date.now() });
   setTimeout(() => pendingApprovals.delete(id), 10 * 60_000).unref?.();
@@ -1008,6 +1010,25 @@ async function requestTool(name, args, context) {
   };
 }
 
+async function executeApprovedTool(pending) {
+  const runtime = pending.context?.runId
+    ? { runId: pending.context.runId, args: pending.args }
+    : null;
+  if (pending.name === 'terminal_run' || CODING_AGENT_JOB_TOOLS.has(pending.name)) {
+    return { status: 'background', name: pending.name, job: startBackgroundJob(pending), _runtime: runtime };
+  }
+  if (pending.plano) {
+    const aplicados = await fileWrite.applyPatch(pending.plano.planos);
+    return { status: 'completed', name: pending.name, result: { arquivos: aplicados }, _runtime: runtime };
+  }
+  return {
+    status: 'completed',
+    name: pending.name,
+    result: await runTool(pending.name, pending.args, pending.context),
+    _runtime: runtime,
+  };
+}
+
 async function resolveApproval(id, approved) {
   const pending = pendingApprovals.get(String(id || ''));
   if (!pending) throw new Error('Aprovação inexistente ou expirada.');
@@ -1016,18 +1037,7 @@ async function resolveApproval(id, approved) {
     ? { runId: pending.context.runId, args: pending.args }
     : null;
   if (!approved) return { status: 'denied', name: pending.name, _runtime: runtime };
-
-  if (pending.name === 'terminal_run' || CODING_AGENT_JOB_TOOLS.has(pending.name)) {
-    return { status: 'background', name: pending.name, job: startBackgroundJob(pending), _runtime: runtime };
-  }
-
-  if (pending.plano) {
-    // Transacional: se um arquivo do patch falhar, os anteriores voltam ao
-    // estado original em vez de deixar meia mudanca aplicada.
-    const aplicados = await fileWrite.applyPatch(pending.plano.planos);
-    return { status: 'completed', name: pending.name, result: { arquivos: aplicados }, _runtime: runtime };
-  }
-  return { status: 'completed', name: pending.name, result: await runTool(pending.name, pending.args, pending.context), _runtime: runtime };
+  return executeApprovedTool(pending);
 }
 
 module.exports = {
